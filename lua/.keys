@@ -1,0 +1,133 @@
+# ---------------------------------------------------------
+# 1. 一覧表示コマンド (keys)
+# ---------------------------------------------------------
+alias keys='echo "
+📌 【マイ・ショートカット備忘録】
+
+■ ターミナル操作
+  option + n           : 次のタブへ移動
+  option + shift + →   : 垂直分割（左右分割）
+  option + shift + ↓   : 水平分割（上下分割）
+  option + cmd + 矢印  : ペイン間を移動（←→↑↓）
+  option + x           : 現在のペインを閉じる
+  control + l : 画面をキレイにする
+  shift + commnd + i : 背景を透過
+ 
+■ タブ操作 (Tab / File)
+  te [file]  : 新規タブで開く (Tab Edit)
+  gn         : 次のタブへ (Go Next)
+  gp         : 前のタブへ (Go Previous)
+  tx         : タブを閉じる (Tab X)
+
+■ 全体操作 / 編集
+　:e　　　　 : テキストファイルを作成（テキストファイルがない場合）
+　:!mkdir    : 親ディレクトリの作成
+　:w　　　　 : ファイルを保存
+  gg         : 文頭へ移動
+  G          : 文末へ移動
+  V + G      : 文頭から文末まで全選択
+  :%y        : 全コピー (All Yank)
+  :%d        : 全削除 (All Delete)
+  gd         : 定義ジャンプ (Go Definition)
+  :lua vim.lsp.buf.format() : コード整形
+  control + u + o : 以前のファイルに戻る
+
+■ 行ジャンプ
+  :123 : 123行目にジャンプ
+  123G : 123行目にジャンプ
+  10j  : 今いる箇所から10行下に行く
+  10k  : 今いる箇所から10行上に行く
+
+
+■ コピー＆ペースト
+  yy         : 1行コピー
+  p          : 貼り付け
+  v -> y     : 範囲選択してコピー
+
+■ 検索 (Telescope等)
+  Space f f  : ファイル検索
+  Space f g  : 文字検索 (Grep)
+
+■ ファイルを開く時 (検索画面など)
+  Enter      : 現在の窓で開く
+  Ctrl + v   : 左右に分割して開く (Vertical)
+  Ctrl + x   : 上下に分割して開く
+  Ctrl + t   : 新規タブで開く
+
+■ 基本・移動
+  jk          : 挿入モードを抜ける
+  <leader>nh  : 検索ハイライトを消す
+  gd          : 定義先にジャンプ
+
+■ 画面分割
+  <leader>sv  : 画面を上下に分割
+  <leader>sh  : 画面を左右に分割
+  Ctrl + w + h/j/k/l : 画面間を移動
+  option + commnd + テンキー：画面間を移動
+  :p          : 画面分割したタブを削除
+
+■ 検索 (Telescope)
+  <leader>f   : ファイル名検索
+  <leader><leader> : プロジェクト内文字検索
+  <leader>p   : プロジェクト切替
+  <leader>?   : 自作ショートカット一覧
+
+■ 開発ツール
+  <leader>g   : Lazygit起動
+  pj [名前]   : プロジェクト移動＆起動
+
+■ Lazygit 基本操作
+　?     : キーバインドのヘルプ表示（迷ったらこれ）
+　q     : Lazygitを終了
+#  ファイル操作 (Filesパネル)
+　Space : ステージング（git add / reset)
+　a     : 全てのファイルをステージング　
+　d     : 変更を破棄（Discard changes）
+　Enter : ファイル内に入って行単位でステージング（Range select）
+#　コミット・プッシュ (Commits / Filesパネル)
+　c     : コミットメッセージを入力してコミット
+　A (Shift+a) : 直前のコミットに修正を取り込む（Amend）
+　P (Shift+p) : プッシュ (git push)
+　p     : プル (git pull)
+#　ブランチ・リベース (Branchesパネル)
+  Space : チェックアウト
+  n     : 新規ブランチ作成
+  M (Shift+m) : 選択中のブランチを現在のブランチにマージ
+  i     : インタラクティブ・リベース開始
+#  履歴操作 (Commitsパネル)
+　s     : コミットを一つにまとめる (Squash)
+　r     : コミットメッセージの書き換え (Reword)
+　g     : コミットのリセット（Soft / Hard 等を選択可能）
+
+■ プラグイン管理 (Lazy.nvim)
+  :Lazy        : プラグインの状態を確認 (現在の画面)
+  I            : (:Lazy画面で) インストール実行
+  U            : (:Lazy画面で) アップデート実行
+  X            : (:Lazy画面で) 不要なプラグインを削除(Clean)
+
+--------------------------------------
+💡 「find-key 検索ワード」で絞り込み検索ができます
+"'
+
+# ---------------------------------------------------------
+# 2. 検索コマンド (find-key)
+# ---------------------------------------------------------
+find_key() {
+    # keys の中身から grep で検索（色付き）
+    keys | grep -i --color=auto "$1"
+}
+
+# ショートカットキーを検索
+alias fk='find_key'
+
+# エイリアス集を編集（保存後に自動反映）
+edkey() {
+  nvim ~/.config/nvim/lua/.keys
+  source ~/.config/nvim/lua/.keys
+  echo "✅ Shortcuts updated!"
+}
+
+# 手動で再読み込み
+alias rekey='source ~/.config/nvim/lua/.keys && echo "✅ Shortcuts updated!"'
+
+

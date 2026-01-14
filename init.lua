@@ -1,0 +1,48 @@
+vim.g.mapleader = " "
+vim.g.maplocalleader = " "
+vim.opt.clipboard = "unnamedplus"
+vim.opt.termguicolors = true
+
+-- lua/options.lua を読み込む
+require("options")
+-- lua/keymaps.lua を読み込む
+require("keymaps")
+
+-- lazy.nvimのインストールスクリプト
+local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
+if not vim.loop.fs_stat(lazypath) then
+    vim.fn.system({
+        "git",
+        "clone",
+        "--filter=blob:none",
+        "https://github.com/folke/lazy.nvim.git",
+        "--branch=stable",
+        lazypath,
+    })
+end
+vim.opt.rtp:prepend(lazypath)
+
+-- 前に書いたrequireをこの下に移動させる
+require("options")
+require("keymaps")
+
+-- pluginsフォルダの中身を読み込む設定
+require("lazy").setup("plugins")
+
+vim.opt.clipboard = "unnamedplus"
+
+-- ==========================================
+-- Mac標準ターミナルの背景色バグ修正パッチ
+-- ==========================================
+vim.api.nvim_create_autocmd("ColorScheme", {
+    pattern = "*",
+    callback = function()
+        -- コメントやキーワードの「斜体(italic)」を強制的にオフにする
+        -- これにより、Macターミナルが勝手に背景色をつけるのを防ぎます
+        vim.api.nvim_set_hl(0, "Comment", { italic = false })
+        vim.api.nvim_set_hl(0, "Keyword", { italic = false })
+        vim.api.nvim_set_hl(0, "Type", { italic = false })
+        vim.api.nvim_set_hl(0, "Identifier", { italic = false })
+        vim.api.nvim_set_hl(0, "Boolean", { italic = false })
+    end,
+})
