@@ -4,6 +4,10 @@
 alias keys='echo "
 📌 【マイ・ショートカット備忘録】
 
+■ 行の上下移動 (Option + ↑/↓)
+  1行だけ : その行で option + ↑ または option + ↓
+  複数行  : V でビジュアル行選択 → j/k で範囲を広げる → option + ↑ または option + ↓
+
 ■ ターミナル操作
   option + n           : 次のタブへ移動
   option + shift + →   : 垂直分割（左右分割）
@@ -29,8 +33,10 @@ alias keys='echo "
   :%y        : 全コピー (All Yank)
   :%d        : 全削除 (All Delete)
   gd         : 定義ジャンプ (Go Definition)
+  K          : 現在行のリンター/LSPエラーを枠で表示（ホバーでも表示）
   :lua vim.lsp.buf.format() : コード整形
   control + u + o : 以前のファイルに戻る
+  control + r : やり直し (Redo)
 
 ■ 行ジャンプ
   :123 : 123行目にジャンプ
@@ -38,11 +44,22 @@ alias keys='echo "
   10j  : 今いる箇所から10行下に行く
   10k  : 今いる箇所から10行上に行く
 
+■ ファイル操作
+　:!rm % : ファイルを削除
 
 ■ コピー＆ペースト
   yy         : 1行コピー
   p          : 貼り付け
   v -> y     : 範囲選択してコピー
+
+■ 選択範囲を囲む
+  【Insert から】 qw → ( か { か [ で囲む
+    Insert で q → w  : 現在の単語を選択（ビジュアルになる）
+    続けて ( か { か [ : 選択を () / {} / [] で囲む
+  【従来】 v / viw で選択 → Space w " など
+  Space w "  : "" で囲む   Space w b  : {} で囲む
+  Space w '  : '' で囲む   Space w p  : () で囲む
+  Space w s  : [] で囲む   Space w `  : `` で囲む
 
 ■ 検索 (Telescope等)
   Space f f  : ファイル検索
@@ -55,9 +72,13 @@ alias keys='echo "
   Ctrl + t   : 新規タブで開く
 
 ■ 基本・移動
+  画面下のステータスライン左に現在モードを表示（NORMAL / INSERT 等・色で区別）
   jk          : 挿入モードを抜ける
   <leader>nh  : 検索ハイライトを消す
   gd          : 定義先にジャンプ
+  K           : 現在行のエラーを枠で表示（VSCodeのホバー風）
+  <leader>c   : パスのコピー
+  <leader>c l : 行番号付きでパスをコピー
 
 ■ 画面分割
   <leader>sv  : 画面を上下に分割
@@ -68,9 +89,21 @@ alias keys='echo "
 
 ■ 検索 (Telescope)
   <leader>f   : ファイル名検索
-  <leader><leader> : プロジェクト内文字検索
+  <leader><leader> : 全文検索（プロジェクト全体）。検索中 Ctrl+h で「履歴ファイルのみ」に絞る
   <leader>p   : プロジェクト切替
   <leader>?   : 自作ショートカット一覧
+  <leader>nh  : 検索ハイライトを消す
+  /（前方）・?（後方） : 文字列検索
+
+■ Claude Code (claudecode.nvim)
+  Ctrl+\      : コード ⇔ Claude にフォーカス切替（エディタ側）
+  Alt+Space   : Claude ターミナル内で押すと左のエディタにフォーカスを戻す（Ctrl+\ が効かないとき用）
+  <leader>ac  : Claude Code を開く/閉じる
+  <leader>af  : Claude Code にフォーカス（Ctrl+\ と同じ）
+  <leader>ab  : 現在のバッファをコンテキストに追加
+  <leader>as  : 選択範囲を Claude に送る (ビジュアルで選択してから)
+  <leader>at  : ファイルツリーで選択したファイルを追加 (NvimTree 等)
+  <leader>aa  : Claude の diff を採用  <leader>ad  : diff を却下
 
 ■ 開発ツール
   <leader>g   : Lazygit起動

@@ -14,6 +14,18 @@ return {
       filters = {
         dotfiles = false,     -- ドットファイル（.configなど）も表示する
       },
+      diagnostics = {
+        enable = true,
+        show_on_dirs = true,
+        show_on_open_dirs = true,
+        debounce_delay = 50,
+        icons = {
+          hint = "󰠠 ",
+          info = " ",
+          warning = " ",
+          error = " ",
+        },
+      },
     })
   end,
 }

@@ -10,7 +10,7 @@ return {
       -- 1. Masonの基本セットアップ
       require("mason").setup()
       require("mason-lspconfig").setup({
-          ensure_installed = { "lua_ls", "ts_ls", "eslint", "pyright" },
+          ensure_installed = { "lua_ls", "ts_ls", "eslint", "pyright", "phpactor", "terraformls", "gopls", "svelte" },
       })
 
       -- 2. 補完機能の準備（エラー回避のために安全に取得）
@@ -20,41 +20,170 @@ return {
         capabilities = cmp_lsp.default_capabilities()
       end
 
-      -- 3. LSPサーバーの個別設定
-      -- 警告が出る require('lspconfig') ではなく、新しい vim.lsp.config を使用
-      local servers = { "lua_ls" }
+      -- 3. LSPサーバーの個別設定（新しいAPIを使用）
+      local function find_root(fname)
+        return vim.fs.root(fname, {
+          "packages/frontend-kaibiz/tsconfig.json",
+          "tsconfig.json",
+          "package.json",
+          ".git"
+        }) or vim.fn.getcwd()
+      end
 
-      for _, server in ipairs(servers) do
-        -- Neovim 0.11以降の推奨される書き方
+      -- TypeScript LSP設定
+      local mason_ts = vim.fn.stdpath("data") .. "/mason/bin/typescript-language-server"
+      local ts_cmd = vim.fn.executable(mason_ts) == 1 and mason_ts or "typescript-language-server"
+      vim.lsp.config("ts_ls", {
+        cmd = { ts_cmd, "--stdio" },
+        root_dir = find_root,
+        capabilities = capabilities,
+        filetypes = {
+          "javascript",
+          "javascriptreact",
+          "javascript.jsx",
+          "typescript",
+          "typescriptreact",
+          "typescript.tsx",
+        },
+        single_file_support = true,
+        autostart = true,
+      })
+      vim.lsp.enable("ts_ls")
+
+      -- Svelte LSP設定
+      local mason_svelte = vim.fn.stdpath("data") .. "/mason/bin/svelte-language-server"
+      local svelte_cmd = vim.fn.executable(mason_svelte) == 1 and mason_svelte or "svelte-language-server"
+      vim.lsp.config("svelte", {
+        cmd = { svelte_cmd, "--stdio" },
+        root_dir = find_root,
+        capabilities = capabilities,
+        filetypes = { "svelte" },
+        single_file_support = true,
+        autostart = true,
+      })
+      vim.lsp.enable("svelte")
+
+      -- その他のLSP設定
+      local other_servers = { "lua_ls", "phpactor", "terraformls", "gopls" }
+      for _, server in ipairs(other_servers) do
         vim.lsp.config(server, {
           capabilities = capabilities,
+          autostart = true,
         })
         vim.lsp.enable(server)
       end
 
-      -- VSCode風のエラー表示設定
-      local signs = { Error = " ", Warn = " ", Hint = "󰠠 ", Info = " " }
-      for type, icon in pairs(signs) do
-        local hl = "DiagnosticSign" .. type
-        vim.fn.sign_define(hl, { text = icon, texthl = hl, numhl = "" })
+      -- TypeScript/JavaScript で ts_ls が付いていなければ明示的に起動（定義ジャンプを可能にする）
+      local function ensure_ts_ls(bufnr)
+        local ft = vim.bo[bufnr].filetype
+        local ts_filetypes = { "javascript", "javascriptreact", "typescript", "typescriptreact", "javascript.jsx", "typescript.tsx" }
+        if not vim.tbl_contains(ts_filetypes, ft) then
+          return
+        end
+        local ts_clients = vim.lsp.get_clients({ bufnr = bufnr, name = "ts_ls" })
+        if #ts_clients > 0 then
+          return
+        end
+        local fname = vim.api.nvim_buf_get_name(bufnr)
+        local root = find_root(fname) or vim.fn.fnamemodify(fname, ":p:h")
+        local mason_ts = vim.fn.stdpath("data") .. "/mason/bin/typescript-language-server"
+        local ts_cmd = vim.fn.executable(mason_ts) == 1 and mason_ts or "typescript-language-server"
+        vim.lsp.start({
+          name = "ts_ls",
+          cmd = { ts_cmd, "--stdio" },
+          root_dir = root,
+          capabilities = capabilities,
+          single_file_support = true,
+        }, { bufnr = bufnr })
       end
 
+      vim.api.nvim_create_autocmd("FileType", {
+        pattern = { "javascript", "javascriptreact", "javascript.jsx", "typescript", "typescriptreact", "typescript.tsx" },
+        callback = function(args)
+          ensure_ts_ls(args.buf)
+        end,
+      })
+
+      -- 既に開いている .ts/.js バッファにも ts_ls を付ける（LspAttach 前で付いていなかった場合の救済）
+      vim.api.nvim_create_autocmd("LspAttach", {
+        callback = function(ev)
+          local client = vim.lsp.get_client_by_id(ev.data.client_id)
+          if client and client.name == "eslint" then
+            vim.defer_fn(function()
+              ensure_ts_ls(ev.buf)
+            end, 100)
+          end
+        end,
+      })
+
+      -- Svelteファイルを開いたときにTypeScript LSPも起動
+      vim.api.nvim_create_autocmd("FileType", {
+        pattern = { "svelte" },
+        callback = function(args)
+          local filename = vim.api.nvim_buf_get_name(args.buf)
+          local ts_clients = vim.lsp.get_clients({ bufnr = args.buf, name = "ts_ls" })
+          if #ts_clients == 0 then
+            local mason_ts = vim.fn.stdpath("data") .. "/mason/bin/typescript-language-server"
+            local ts_cmd = vim.fn.executable(mason_ts) == 1 and mason_ts or "typescript-language-server"
+            vim.lsp.start({
+              name = "ts_ls",
+              cmd = { ts_cmd, "--stdio" },
+              root_dir = find_root(filename),
+              capabilities = capabilities,
+              single_file_support = true,
+            }, { bufnr = args.buf })
+          end
+        end,
+      })
+
       vim.diagnostic.config({
-        virtual_text = { prefix = "●" },
-        underline = true,
+        signs = {
+          text = {
+            [vim.diagnostic.severity.ERROR] = " ",
+            [vim.diagnostic.severity.WARN] = " ",
+            [vim.diagnostic.severity.HINT] = " ",
+            [vim.diagnostic.severity.INFO] = " ",
+          },
+        },
+        virtual_text = false,  -- 行末のエラー表示は出さない
+        underline = true,     -- エラー箇所の下線はそのまま
         update_in_insert = false,
         severity_sort = true,
         float = { border = "rounded" },
       })
 
-      -- 4. キーマップ設定
+      -- カーソルを一定時間止めたときに現在行の診断をフロート表示（VSCodeのホバー風）
+      vim.opt.updatetime = 300  -- ホバー表示までの待ち時間（ms）
+      vim.api.nvim_create_autocmd({ "CursorHold", "CursorHoldI" }, {
+        callback = function()
+          vim.diagnostic.open_float(nil, { focus = false, scope = "cursor", border = "rounded" })
+        end,
+      })
+
+      -- 4. キーマップ設定とセマンティックハイライト
       vim.api.nvim_create_autocmd('LspAttach', {
         callback = function(ev)
           local opts = { buffer = ev.buf }
-          vim.keymap.set('n', 'gd', vim.lsp.buf.definition, opts) -- 定義へ
-          vim.keymap.set('n', '<D-d>',vim.lsp.buf.definition, opts)
+          local client = vim.lsp.get_client_by_id(ev.data.client_id)
+          
+          -- キーマップ設定（定義は Telescope で VSCode 風ピッカー表示）
+          vim.keymap.set('n', 'gd', function()
+            require('telescope.builtin').lsp_definitions({ reuse_win = true })
+          end, vim.tbl_extend("force", opts, { desc = "Go to definition (Telescope)" }))
+          vim.keymap.set('n', '<D-d>', function()
+            require('telescope.builtin').lsp_definitions({ reuse_win = true })
+          end, vim.tbl_extend("force", opts, { desc = "Go to definition (Telescope)" }))
           vim.keymap.set('n', ']d', vim.diagnostic.goto_next, opts)
           vim.keymap.set('n', '[d', vim.diagnostic.goto_prev, opts)
+          -- 現在行の診断を枠付きフロートで表示（VSCodeのホバー風）
+          vim.keymap.set('n', 'K', function()
+            vim.diagnostic.open_float(nil, { scope = "cursor", border = "rounded" })
+          end, vim.tbl_extend("force", opts, { desc = "Show diagnostic in float" }))
+
+          -- セマンティックハイライトを有効化（LSPの色付け）
+          if client and client.server_capabilities.semanticTokensProvider then
+            vim.lsp.semantic_tokens.start(ev.buf, ev.data.client_id)
+          end
         end,
       })
     end,

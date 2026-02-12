@@ -7,6 +7,8 @@ vim.opt.termguicolors = true
 require("options")
 -- lua/keymaps.lua を読み込む
 require("keymaps")
+-- コメント・文字列外では全角を半角に自動変換
+require("zenkaku")
 
 -- lazy.nvimのインストールスクリプト
 local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
@@ -25,6 +27,7 @@ vim.opt.rtp:prepend(lazypath)
 -- 前に書いたrequireをこの下に移動させる
 require("options")
 require("keymaps")
+require("zenkaku")
 
 -- pluginsフォルダの中身を読み込む設定
 require("lazy").setup("plugins")

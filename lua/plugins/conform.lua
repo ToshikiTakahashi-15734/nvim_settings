@@ -1,34 +1,57 @@
 return {
-  "stevearc/conform.nvim",
-  event = { "BufWritePre" },
-  cmd = { "ConformInfo" },
-  keys = {
-    {
-      "<A-S-f>",
-      function()
-        require("conform").format({ async = true, lsp_fallback = true })
-      end,
-      mode = "",
-      desc = "Format buffer",
+    "stevearc/conform.nvim",
+    event = { "BufWritePre" },
+    cmd = { "ConformInfo" },
+    keys = {
+        {
+            "<A-S-f>",
+            function()
+                require("conform").format({ async = true, lsp_fallback = false })
+            end,
+            mode = "",
+            desc = "Format buffer",
+        },
     },
-  },
-  opts = {
-    formatters_by_ft = {
-      javascript = { "prettier" },
-      typescript = { "prettier" },
-      javascriptreact = { "prettier" },
-      typescriptreact = { "prettier" },
-      json = { "prettier" },
-      lua = { "stylua" },
-      python = { "isort", "black" },
-    },
-    format_on_save = {
-      timeout_ms = 500,
-      lsp_fallback = true,
-    },
-  },
-  init = function()
-    -- Prettierがインストールされているか確認
-    vim.g.did_conform_init = true
-  end,
+    opts = function()
+        local util = require("conform.util")
+
+        return {
+            formatters_by_ft = {
+                javascript = { "eslint_d", "eslint" },
+                typescript = { "eslint_d", "eslint" },
+                javascriptreact = { "eslint_d", "eslint" },
+                typescriptreact = { "eslint_d", "eslint" },
+                json = { "prettier" },
+                lua = { "stylua" },
+                python = { "isort", "black" },
+                terraform = { "terraform_fmt" },
+                hcl = { "terraform_fmt" },
+            },
+            formatters = {
+                eslint_d = {
+                    cwd = util.root_file({
+                        ".eslintrc.cjs",
+                        ".eslintrc.js",
+                        ".eslintrc.json",
+                        "package.json",
+                        ".git",
+                    }),
+                },
+                eslint = {
+                    cwd = util.root_file({
+                        ".eslintrc.cjs",
+                        ".eslintrc.js",
+                        ".eslintrc.json",
+                        "package.json",
+                        ".git",
+                    }),
+                },
+            },
+            format_on_save = {
+                timeout_ms = 500,
+                lsp_fallback = false,
+                stop_after_first = true,
+            },
+        }
+    end,
 }
