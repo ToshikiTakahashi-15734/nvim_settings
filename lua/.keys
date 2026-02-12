@@ -32,7 +32,7 @@ alias keys='echo "
   V + G      : 文頭から文末まで全選択
   :%y        : 全コピー (All Yank)
   :%d        : 全削除 (All Delete)
-  gd         : 定義ジャンプ (Go Definition)
+  gd         : 定義ジャンプ（小窓）  gr : 参照一覧（右パネル・ファイル別ツリー・VSCode風）
   K          : 現在行のリンター/LSPエラーを枠で表示（ホバーでも表示）
   :lua vim.lsp.buf.format() : コード整形
   control + u + o : 以前のファイルに戻る
@@ -75,7 +75,7 @@ alias keys='echo "
   画面下のステータスライン左に現在モードを表示（NORMAL / INSERT 等・色で区別）
   jk          : 挿入モードを抜ける
   <leader>nh  : 検索ハイライトを消す
-  gd          : 定義先にジャンプ
+  gd          : 定義先にジャンプ（小窓）  gr : 参照一覧（右パネル・ファイル別）
   K           : 現在行のエラーを枠で表示（VSCodeのホバー風）
   <leader>c   : パスのコピー
   <leader>c l : 行番号付きでパスをコピー

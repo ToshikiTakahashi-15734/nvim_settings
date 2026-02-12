@@ -5,6 +5,7 @@ return {
       "williamboman/mason.nvim",
       "williamboman/mason-lspconfig.nvim",
       "hrsh7th/cmp-nvim-lsp",
+      "folke/trouble.nvim",
     },
     config = function()
       -- 1. Masonの基本セットアップ
@@ -160,19 +161,39 @@ return {
         end,
       })
 
+      -- VSCode風の小窓レイアウト（Telescope の dropdown テーマ）
+      local small_win_opts = {
+        reuse_win = true,
+        layout_config = {
+          height = 0.35,
+          width = 0.7,
+          prompt_position = "top",
+          preview_cutoff = 1,
+        },
+        border = true,
+        borderchars = { "─", "│", "─", "│", "╭", "╮", "╯", "╰" },
+      }
+
       -- 4. キーマップ設定とセマンティックハイライト
       vim.api.nvim_create_autocmd('LspAttach', {
         callback = function(ev)
           local opts = { buffer = ev.buf }
           local client = vim.lsp.get_client_by_id(ev.data.client_id)
           
-          -- キーマップ設定（定義は Telescope で VSCode 風ピッカー表示）
+          -- キーマップ設定（定義・参照とも小窓で表示）
           vim.keymap.set('n', 'gd', function()
-            require('telescope.builtin').lsp_definitions({ reuse_win = true })
-          end, vim.tbl_extend("force", opts, { desc = "Go to definition (Telescope)" }))
+            require('telescope.builtin').lsp_definitions(vim.tbl_extend("force", small_win_opts, {}))
+          end, vim.tbl_extend("force", opts, { desc = "Go to definition (small window)" }))
           vim.keymap.set('n', '<D-d>', function()
-            require('telescope.builtin').lsp_definitions({ reuse_win = true })
-          end, vim.tbl_extend("force", opts, { desc = "Go to definition (Telescope)" }))
+            require('telescope.builtin').lsp_definitions(vim.tbl_extend("force", small_win_opts, {}))
+          end, vim.tbl_extend("force", opts, { desc = "Go to definition (small window)" }))
+          -- 参照一覧を右パネルで表示（VSCodeの References パネル風・ファイル別ツリー）
+          vim.keymap.set('n', 'gr', function()
+            require("trouble").toggle("lsp_references", {
+              win = { position = "right", size = 0.35 },
+              focus = false,
+            })
+          end, vim.tbl_extend("force", opts, { desc = "References (right panel, tree by file)" }))
           vim.keymap.set('n', ']d', vim.diagnostic.goto_next, opts)
           vim.keymap.set('n', '[d', vim.diagnostic.goto_prev, opts)
           -- 現在行の診断を枠付きフロートで表示（VSCodeのホバー風）

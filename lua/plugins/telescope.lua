@@ -10,6 +10,26 @@ return {
       },
     },
     config = function()
+      -- 長いパスを「ファイル名 + パス（中央...で省略）」で表示（VSCode風）
+      local function path_display_filename_first_truncate(_, path)
+        path = path or ""
+        local tail = vim.fn.fnamemodify(path, ":t")
+        local dir = vim.fn.fnamemodify(path, ":h")
+        if dir == "." or dir == "" then
+          return tail
+        end
+        local cwd = vim.fn.getcwd()
+        if #dir >= #cwd and dir:sub(1, #cwd) == cwd then
+          dir = dir:sub(#cwd + 1):gsub("^[/\\]+", "")
+        end
+        local max_path = 48
+        if #dir <= max_path then
+          return tail .. "  " .. dir
+        end
+        local keep = math.max(1, math.floor((max_path - 3) / 2))
+        return tail .. "  " .. dir:sub(1, keep) .. "..." .. dir:sub(-keep)
+      end
+
       require('telescope').setup({
         defaults = {
           preview = {
@@ -17,6 +37,7 @@ return {
           },
           file_sorter = require('telescope.sorters').get_fuzzy_file,
           generic_sorter = require('telescope.sorters').get_generic_fuzzy_sorter,
+          path_display = path_display_filename_first_truncate,
         },
         extensions = {
           frecency = {
