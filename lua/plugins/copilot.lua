@@ -8,8 +8,7 @@ return {
                 enabled = true,       -- ★ここを true にする
                 auto_trigger = true,  -- 自動で提案を出す
                 keymap = {
-                    accept = "<Tab>", -- Tabキーで確定する設定
-                    -- accept = "<C-l>", -- もしTabが競合する場合は Ctrl+l などに変更
+                    accept = false, -- Tab は completions.lua 側で統合制御
                 },
             },
             panel = { enabled = false },

@@ -358,41 +358,8 @@ keymap.set("n", "<A-D-Down>", "<C-w>j", { desc = "下のペインへ移動（Wez
 -- ALT + x: 現在のペインを閉じる
 keymap.set("n", "<A-x>", "<C-w>c", { desc = "ペインを閉じる（WezTerm互換）" })
 
--- t: フローティングターミナルを開閉する（通常モード）
-local float_term_win = nil
-local float_term_buf = nil
-local function toggle_floating_terminal()
-    if float_term_win and vim.api.nvim_win_is_valid(float_term_win) then
-        vim.api.nvim_win_close(float_term_win, true)
-        float_term_win = nil
-        float_term_buf = nil
-        return
-    end
-
-    float_term_buf = vim.api.nvim_create_buf(false, true)
-    vim.bo[float_term_buf].bufhidden = "wipe"
-
-    local width = math.floor(vim.o.columns * 0.5)
-    local height = math.floor(vim.o.lines * 0.2)
-    local row = math.floor((vim.o.lines - height) / 2)
-    local col = math.floor((vim.o.columns - width) / 2)
-
-    float_term_win = vim.api.nvim_open_win(float_term_buf, true, {
-        relative = "editor",
-        row = row,
-        col = col,
-        width = width,
-        height = height,
-        style = "minimal",
-        border = "rounded",
-    })
-
-    vim.fn.termopen(vim.o.shell)
-    vim.cmd("startinsert")
-end
-
-keymap.set("n", "t", toggle_floating_terminal, { desc = "Toggle floating terminal" })
-keymap.set("t", "<Esc><Esc>", toggle_floating_terminal, { desc = "Close floating terminal" })
+-- T (Shift+t): フローティングターミナルの開閉は toggleterm.nvim で管理
+-- （設定は lua/plugins/toggleterm.lua）
 
 -- Option + Shift + F でコード整形
 keymap.set({ "n", "v", "i" }, "<M-S-f>", function()

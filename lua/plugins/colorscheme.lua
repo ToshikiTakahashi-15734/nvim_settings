@@ -52,6 +52,9 @@ return {
       vim.api.nvim_set_hl(0, "Todo", { fg = todo_fg, bg = "NONE", bold = true })
       vim.api.nvim_set_hl(0, "@text.todo", { fg = todo_fg, bg = "NONE", bold = true })
       vim.api.nvim_set_hl(0, "@comment.todo", { fg = todo_fg, bg = "NONE", bold = true })
+
+      -- Telescope: パス部分を薄いグレーで表示（Cursor風）
+      vim.api.nvim_set_hl(0, "TelescopeResultsComment", { fg = "#6c6c6c" })
     end,
   },
 }

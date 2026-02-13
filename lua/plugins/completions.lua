@@ -14,6 +14,23 @@ return {
         mapping = cmp.mapping.preset.insert({
           ['<C-Space>'] = cmp.mapping.complete(),
           ['<CR>'] = cmp.mapping.confirm({ select = true }),
+          ['<Tab>'] = cmp.mapping(function(fallback)
+            local copilot = require("copilot.suggestion")
+            if copilot.is_visible() then
+              copilot.accept()
+            elseif cmp.visible() then
+              cmp.select_next_item()
+            else
+              fallback() -- 補完なし → 通常のTab（インデント挿入）
+            end
+          end, { 'i', 's' }),
+          ['<S-Tab>'] = cmp.mapping(function(fallback)
+            if cmp.visible() then
+              cmp.select_prev_item()
+            else
+              fallback()
+            end
+          end, { 'i', 's' }),
         }),
         sources = cmp.config.sources({
           { name = 'nvim_lsp' },

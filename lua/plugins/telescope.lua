@@ -10,7 +10,7 @@ return {
       },
     },
     config = function()
-      -- 長いパスを「ファイル名 + パス（中央...で省略）」で表示（VSCode風）
+      -- 長いパスを「ファイル名 + パス（薄い色で省略表示）」で表示（Cursor風）
       local function path_display_filename_first_truncate(_, path)
         path = path or ""
         local tail = vim.fn.fnamemodify(path, ":t")
@@ -23,11 +23,19 @@ return {
           dir = dir:sub(#cwd + 1):gsub("^[/\\]+", "")
         end
         local max_path = 48
+        local display_dir
         if #dir <= max_path then
-          return tail .. "  " .. dir
+          display_dir = dir
+        else
+          local keep = math.max(1, math.floor((max_path - 3) / 2))
+          display_dir = dir:sub(1, keep) .. "..." .. dir:sub(-keep)
         end
-        local keep = math.max(1, math.floor((max_path - 3) / 2))
-        return tail .. "  " .. dir:sub(1, keep) .. "..." .. dir:sub(-keep)
+        local display = tail .. "  " .. display_dir
+        local path_start = #tail + 2
+        local highlights = {
+          { { path_start, #display }, "TelescopeResultsComment" },
+        }
+        return display, highlights
       end
 
       require('telescope').setup({

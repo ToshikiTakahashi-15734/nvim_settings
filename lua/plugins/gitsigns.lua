@@ -2,7 +2,12 @@ return {
   "lewis6991/gitsigns.nvim",
   config = function()
     require('gitsigns').setup({
-      -- 変更箇所のプレビューを <leader>hp で見れるように設定例
+      current_line_blame = true,
+      current_line_blame_opts = {
+        delay = 300,
+        virt_text_pos = "eol",
+      },
+      current_line_blame_formatter = "  <author> • <author_time:%Y-%m-%d> • <summary>",
       on_attach = function(bufnr)
         local gs = package.loaded.gitsigns
         vim.keymap.set('n', '<leader>hp', gs.preview_hunk, { buffer = bufnr, desc = "Git差分をプレビュー" })
