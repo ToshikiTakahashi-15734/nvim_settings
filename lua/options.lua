@@ -8,6 +8,7 @@ opt.ignorecase = true       -- 検索時に大文字小文字を区別しない
 opt.smartcase = true        -- 大文字が含まれる場合は区別する
 opt.hlsearch = true         -- 検索結果をハイライト
 opt.incsearch = true        -- 検索中にインクリメンタル表示
+opt.autoread = true         -- 外部でファイルが変更されたら自動で再読み込み
 opt.autowrite = true        -- 可能なら自動保存
 opt.autowriteall = true     -- バッファ全体を自動保存
 opt.shiftwidth = 4          -- インデントの幅を4に

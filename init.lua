@@ -35,6 +35,18 @@ require("lazy").setup("plugins")
 vim.opt.clipboard = "unnamedplus"
 
 -- ==========================================
+-- 外部変更の自動再読み込み（Claude Code 等）
+-- ==========================================
+vim.api.nvim_create_autocmd({ "FocusGained", "BufEnter", "CursorHold" }, {
+    pattern = "*",
+    callback = function()
+        if vim.fn.getcmdwintype() == "" then
+            vim.cmd("checktime")
+        end
+    end,
+})
+
+-- ==========================================
 -- Mac標準ターミナルの背景色バグ修正パッチ
 -- ==========================================
 vim.api.nvim_create_autocmd("ColorScheme", {

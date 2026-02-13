@@ -65,7 +65,17 @@ return {
       vim.lsp.enable("svelte")
 
       -- その他のLSP設定
-      local other_servers = { "lua_ls", "phpactor", "terraformls", "gopls" }
+      -- phpactor（PHPStan をグローバルで有効化）
+      vim.lsp.config("phpactor", {
+        capabilities = capabilities,
+        autostart = true,
+        init_options = {
+          ["language_server_phpstan.enabled"] = true,
+        },
+      })
+      vim.lsp.enable("phpactor")
+
+      local other_servers = { "lua_ls", "terraformls", "gopls" }
       for _, server in ipairs(other_servers) do
         vim.lsp.config(server, {
           capabilities = capabilities,
@@ -187,13 +197,9 @@ return {
           vim.keymap.set('n', '<D-d>', function()
             require('telescope.builtin').lsp_definitions(vim.tbl_extend("force", small_win_opts, {}))
           end, vim.tbl_extend("force", opts, { desc = "Go to definition (small window)" }))
-          -- 参照一覧を右パネルで表示（VSCodeの References パネル風・ファイル別ツリー）
-          vim.keymap.set('n', 'gr', function()
-            require("trouble").toggle("lsp_references", {
-              win = { position = "right", size = 0.35 },
-              focus = false,
-            })
-          end, vim.tbl_extend("force", opts, { desc = "References (right panel, tree by file)" }))
+          -- 参照一覧をCursor風のpeekウィンドウで表示
+          vim.keymap.set('n', 'gr', '<CMD>Glance references<CR>',
+            vim.tbl_extend("force", opts, { desc = "References (peek window)" }))
           vim.keymap.set('n', ']d', vim.diagnostic.goto_next, opts)
           vim.keymap.set('n', '[d', vim.diagnostic.goto_prev, opts)
           -- 現在行の診断を枠付きフロートで表示（VSCodeのホバー風）
