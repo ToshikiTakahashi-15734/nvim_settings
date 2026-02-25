@@ -303,8 +303,52 @@ keymap.set("n", "gd", function()
     vim.notify("定義ジャンプに対応したLSPがありません", vim.log.levels.WARN)
 end, { desc = "Go to definition" })
 
+-- ==========================================
+-- Git 操作
+-- ==========================================
+
 -- スペース + g で Lazygit を起動
 keymap.set("n", "<leader>g", ":LazyGit<CR>", { desc = "Lazygitを起動 (Git操作)" })
+
+-- diffview: 差分ビュー
+keymap.set("n", "<leader>df", "<cmd>DiffviewOpen<CR>", { desc = "差分ビューを開く" })
+keymap.set("n", "<leader>dfh", "<cmd>DiffviewFileHistory %<CR>", { desc = "ファイルの変更履歴" })
+keymap.set("n", "<leader>dfH", "<cmd>DiffviewFileHistory<CR>", { desc = "リポジトリの変更履歴" })
+keymap.set("n", "<leader>dfc", "<cmd>DiffviewClose<CR>", { desc = "差分ビューを閉じる" })
+
+-- gitsigns: hunk間の移動
+keymap.set("n", "]c", function()
+  if vim.wo.diff then return "]c" end
+  vim.schedule(function() require("gitsigns").next_hunk() end)
+  return "<Ignore>"
+end, { expr = true, desc = "次の変更箇所へ" })
+
+keymap.set("n", "[c", function()
+  if vim.wo.diff then return "[c" end
+  vim.schedule(function() require("gitsigns").prev_hunk() end)
+  return "<Ignore>"
+end, { expr = true, desc = "前の変更箇所へ" })
+
+-- gitsigns: hunk操作
+keymap.set("n", "<leader>hp", function() require("gitsigns").preview_hunk() end, { desc = "変更をプレビュー" })
+keymap.set("n", "<leader>hs", function() require("gitsigns").stage_hunk() end, { desc = "変更をステージ" })
+keymap.set("n", "<leader>hr", function() require("gitsigns").reset_hunk() end, { desc = "変更をリセット" })
+keymap.set("v", "<leader>hs", function() require("gitsigns").stage_hunk({ vim.fn.line("."), vim.fn.line("v") }) end, { desc = "選択範囲をステージ" })
+keymap.set("v", "<leader>hr", function() require("gitsigns").reset_hunk({ vim.fn.line("."), vim.fn.line("v") }) end, { desc = "選択範囲をリセット" })
+keymap.set("n", "<leader>hu", function() require("gitsigns").undo_stage_hunk() end, { desc = "ステージを取り消し" })
+keymap.set("n", "<leader>hS", function() require("gitsigns").stage_buffer() end, { desc = "ファイル全体をステージ" })
+keymap.set("n", "<leader>hR", function() require("gitsigns").reset_buffer() end, { desc = "ファイル全体をリセット" })
+
+-- gitsigns: 差分表示
+keymap.set("n", "<leader>hd", function() require("gitsigns").diffthis() end, { desc = "差分を表示 (index)" })
+keymap.set("n", "<leader>hD", function() require("gitsigns").diffthis("~") end, { desc = "差分を表示 (前回commit)" })
+
+-- gitsigns: blame
+keymap.set("n", "<leader>hb", function() require("gitsigns").blame_line({ full = true }) end, { desc = "行のblame詳細" })
+keymap.set("n", "<leader>hB", function() require("gitsigns").toggle_current_line_blame() end, { desc = "blame表示の切替" })
+
+-- gitsigns: 削除行の表示
+keymap.set("n", "<leader>hl", function() require("gitsigns").toggle_deleted() end, { desc = "削除行の表示切替" })
 
 -- スペース + p (Project) でプロジェクト一覧を表示
 -- 選択するとそのディレクトリに移動(cd)してファイル検索が開きます
@@ -315,6 +359,16 @@ end, { desc = "プロジェクトを切り替える" })
 
 -- スペース + s + f で拡張子を指定してファイル検索（前回の拡張子を保持）
 vim.g.telescope_ext_filter = vim.g.telescope_ext_filter or '*'
+local function get_project_root()
+    local bufpath = vim.api.nvim_buf_get_name(0)
+    local bufdir = bufpath ~= "" and vim.fn.fnamemodify(bufpath, ":h") or vim.fn.getcwd()
+    local git_root = vim.fn.systemlist("cd " .. vim.fn.shellescape(bufdir) .. " && git rev-parse --show-toplevel")[1]
+    if vim.v.shell_error == 0 and git_root and git_root ~= "" then
+        return git_root
+    end
+    return vim.fn.getcwd()
+end
+
 local function find_files_with_extension()
     vim.ui.input({ prompt = '拡張子 (例: php, tsx, *): ', default = vim.g.telescope_ext_filter }, function(ext)
         if not ext or ext == '' then
@@ -329,7 +383,7 @@ local function find_files_with_extension()
                 table.insert(cmd, string.format('*.%s', e))
             end
         end
-        require('telescope.builtin').find_files({ find_command = cmd })
+        require('telescope.builtin').find_files({ find_command = cmd, cwd = get_project_root() })
     end)
 end
 
@@ -390,3 +444,22 @@ vim.keymap.set('n', '<leader>ce', function()
     vim.fn.setreg('+', value)
     print("Copied error message with file path and line number!")
 end, { desc = "Copy diagnostic with file path and line" })
+
+-- ==========================================
+-- React Component Tree
+-- ==========================================
+
+-- スペース + rt: 現在ファイルのコンポーネントツリーを表示
+keymap.set("n", "<leader>rt", function()
+  require("react-tree").show()
+end, { desc = "React: コンポーネントツリーを表示" })
+
+-- スペース + rp: ルートコンポーネントを選択してツリー表示
+keymap.set("n", "<leader>rp", function()
+  require("react-tree").pick_root()
+end, { desc = "React: ルートを選んでツリー表示" })
+
+-- スペース + rd: デバッグ（treesitterがJSXノードを認識しているか確認）
+keymap.set("n", "<leader>rd", function()
+  require("react-tree").debug()
+end, { desc = "React: ツリーデバッグ" })

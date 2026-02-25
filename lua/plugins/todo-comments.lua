@@ -12,13 +12,13 @@ return {
           NOTE = { icon = "N", color = "info" },
         },
         colors = {
-          todo = { "#000000", "#ff00ff" }, -- neon magenta
-          error = { "#000000", "#ff0000" }, -- vivid red
-          info = { "#000000", "#00ffff" }, -- neon cyan
-          warning = { "#000000", "#ffea00" }, -- bright yellow
-          hint = { "#000000", "#00ff00" }, -- neon green
-          default = { "#000000", "#ff00ff" },
-          test = { "#000000", "#ff87ff" },
+          todo = { "#ff00ff" }, -- neon magenta
+          error = { "#ff0000" }, -- vivid red
+          info = { "#00ffff" }, -- neon cyan
+          warning = { "#ffea00" }, -- bright yellow
+          hint = { "#00ff00" }, -- neon green
+          default = { "#ff00ff" },
+          test = { "#ff87ff" },
         },
         highlight = {
           before = "",

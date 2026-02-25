@@ -2,11 +2,15 @@ return {
   {
     'nvim-telescope/telescope.nvim',
     tag = '0.1.8',
-    dependencies = { 
+    dependencies = {
       'nvim-lua/plenary.nvim',
       {
         'nvim-telescope/telescope-frecency.nvim',
         dependencies = { 'kkharji/sqlite.lua' },
+      },
+      {
+        'nvim-telescope/telescope-fzf-native.nvim',
+        build = 'make',
       },
     },
     config = function()
@@ -43,12 +47,19 @@ return {
           preview = {
             treesitter = false,  -- ft_to_lang nil エラー回避（Tree-sitter 未導入 or Neovim 0.11 互換）
           },
-          file_sorter = require('telescope.sorters').get_fuzzy_file,
+          file_sorter = require('telescope.sorters').get_generic_fuzzy_sorter,
           generic_sorter = require('telescope.sorters').get_generic_fuzzy_sorter,
           path_display = path_display_filename_first_truncate,
         },
         extensions = {
+          fzf = {
+            fuzzy = true,
+            override_generic_sorter = true,
+            override_file_sorter = true,
+            case_mode = "smart_case",
+          },
           frecency = {
+            db_safe_mode = false,
             show_scores = true,
             show_unindexed = true,
             ignore_patterns = { "*.git/*", "*/tmp/*" },
@@ -60,6 +71,8 @@ return {
         },
       })
       
+      -- fzf-native 拡張を読み込み（C実装で高速・高精度なファジーマッチ）
+      require('telescope').load_extension('fzf')
       -- Frecency 拡張を読み込み
       require('telescope').load_extension('frecency')
 
@@ -71,7 +84,14 @@ return {
       local action_state = require('telescope.actions.state')
       local Job = require('plenary.job')
 
+      -- 現在のバッファのパスからgit rootを特定（nvimの起動ディレクトリに依存しない）
       local function get_cwd()
+        local bufpath = vim.api.nvim_buf_get_name(0)
+        local bufdir = bufpath ~= "" and vim.fn.fnamemodify(bufpath, ":h") or vim.fn.getcwd()
+        local git_root = vim.fn.systemlist("cd " .. vim.fn.shellescape(bufdir) .. " && git rev-parse --show-toplevel")[1]
+        if vim.v.shell_error == 0 and git_root and git_root ~= "" then
+          return git_root
+        end
         return vim.fn.getcwd()
       end
 
@@ -179,6 +199,8 @@ return {
               return nil
             end
             local args = vim.deepcopy(conf.vimgrep_arguments)
+            table.insert(args, '--fixed-strings')
+            table.insert(args, '--')
             table.insert(args, prompt)
             for _, dir in ipairs(search_dirs) do
               table.insert(args, dir)
@@ -201,7 +223,7 @@ return {
           prompt_title = '全文検索（プロジェクト全体）',
           finder = live_grep_finder({ cwd }),
           previewer = conf.grep_previewer({}),
-          sorter = conf.generic_sorter({}),
+          sorter = require('telescope.sorters').empty(),
           cwd = cwd,
           attach_mappings = function(prompt_bufnr, map)
             map('i', '<C-a>', function()
@@ -289,10 +311,24 @@ return {
         end)
       end
 
-      -- 1. ファイル名検索（履歴優先・頻度ベース） (スペース + f)
+      -- 1. ファイル名検索（プロジェクト全体） (スペース + f)
+      --    パスをコピペしても検索できるよう、クエリ内の "/" をスペースに置換してマッチさせる
       vim.keymap.set('n', '<leader>f', function()
-        require('telescope').extensions.frecency.frecency({ workspace = 'CWD' })
-      end, { desc = "ファイル検索（履歴優先）" })
+        local cwd = get_cwd()
+        pickers.new({}, {
+          prompt_title = 'ファイル検索（プロジェクト全体）',
+          finder = finders.new_oneshot_job(
+            { 'fd', '--type', 'file', '--strip-cwd-prefix', '--hidden', '--follow', '--exclude', '.git' },
+            { cwd = cwd, entry_maker = make_entry.gen_from_file({ cwd = cwd }) }
+          ),
+          sorter = conf.file_sorter({}),
+          previewer = conf.file_previewer({}),
+          on_input_filter_cb = function(prompt)
+            -- "/" をスペースに置換してファジーマッチしやすくする（Cursor風）
+            return { prompt = prompt:gsub("/", " ") }
+          end,
+        }):find()
+      end, { desc = "ファイル検索（プロジェクト全体）" })
 
       -- 2. 全文検索（プロジェクト全体） (スペース2回)
       vim.keymap.set('n', '<leader><leader>', live_grep_with_history, { desc = "全文検索（プロジェクト全体）" })
@@ -301,16 +337,18 @@ return {
       vim.keymap.set('n', '<leader>fh', builtin.oldfiles, { desc = "ファイル履歴" })
 
       -- 4. 全ファイル検索（履歴無視） (スペース + f + a)
-      vim.keymap.set('n', '<leader>fa', builtin.find_files, { desc = "全ファイル検索" })
+      vim.keymap.set('n', '<leader>fa', function()
+        builtin.find_files({ cwd = get_cwd() })
+      end, { desc = "全ファイル検索" })
 
       -- 5. 全ショートカット（Vim標準+LSP+自分で決めたもの）の表示
       vim.keymap.set('n', '<leader>?', builtin.keymaps, { desc = "Search all keymaps" })
 
 
-      -- 元々あった設定も残す場合はこちら（不要なら消してOKです）
+      -- 履歴ベースのファイル検索（frecency） (スペース + f + f)
       vim.keymap.set('n', '<leader>ff', function()
-        require('telescope').extensions.frecency.frecency({ workspace = 'CWD' })
-      end, {})
+        require('telescope').extensions.frecency.frecency({ cwd = get_cwd() })
+      end, { desc = "ファイル検索（履歴優先）" })
       vim.keymap.set('n', '<leader>fg', live_grep_with_history, {})
     end
   }
