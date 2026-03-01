@@ -171,6 +171,40 @@ return {
         end,
       })
 
+      -- diffview バッファで LSP 操作を実ファイルに切り替えて実行するヘルパー
+      local function with_real_file(callback)
+        local bufname = vim.api.nvim_buf_get_name(0)
+        if not bufname:match("^diffview://") then
+          callback()
+          return
+        end
+
+        local ok_dv, lib = pcall(require, "diffview.lib")
+        if not ok_dv then
+          callback()
+          return
+        end
+
+        local view = lib.get_current_view()
+        if not view then
+          callback()
+          return
+        end
+
+        local file = view:infer_cur_file()
+        if not file or not file.absolute_path then
+          callback()
+          return
+        end
+
+        local cursor = vim.api.nvim_win_get_cursor(0)
+        vim.cmd("edit " .. vim.fn.fnameescape(file.absolute_path))
+        pcall(vim.api.nvim_win_set_cursor, 0, cursor)
+        vim.defer_fn(function()
+          callback()
+        end, 150)
+      end
+
       -- VSCode風の小窓レイアウト（Telescope の dropdown テーマ）
       local small_win_opts = {
         reuse_win = true,
@@ -192,14 +226,21 @@ return {
           
           -- キーマップ設定（定義・参照とも小窓で表示）
           vim.keymap.set('n', 'gd', function()
-            require('telescope.builtin').lsp_definitions(vim.tbl_extend("force", small_win_opts, {}))
+            with_real_file(function()
+              require('telescope.builtin').lsp_definitions(vim.tbl_extend("force", small_win_opts, {}))
+            end)
           end, vim.tbl_extend("force", opts, { desc = "Go to definition (small window)" }))
           vim.keymap.set('n', '<D-d>', function()
-            require('telescope.builtin').lsp_definitions(vim.tbl_extend("force", small_win_opts, {}))
+            with_real_file(function()
+              require('telescope.builtin').lsp_definitions(vim.tbl_extend("force", small_win_opts, {}))
+            end)
           end, vim.tbl_extend("force", opts, { desc = "Go to definition (small window)" }))
           -- 参照一覧をCursor風のpeekウィンドウで表示
-          vim.keymap.set('n', 'gr', '<CMD>Glance references<CR>',
-            vim.tbl_extend("force", opts, { desc = "References (peek window)" }))
+          vim.keymap.set('n', 'gr', function()
+            with_real_file(function()
+              vim.cmd('Glance references')
+            end)
+          end, vim.tbl_extend("force", opts, { desc = "References (peek window)" }))
           vim.keymap.set('n', ']d', vim.diagnostic.goto_next, opts)
           vim.keymap.set('n', '[d', vim.diagnostic.goto_prev, opts)
           -- 現在行の診断を枠付きフロートで表示（VSCodeのホバー風）

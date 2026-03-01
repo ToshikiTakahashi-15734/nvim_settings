@@ -42,6 +42,36 @@ return {
             -- 定数（ブルー）
             ["@constant"] = { fg = "#4FC1FF" },
             ["@constant.builtin"] = { fg = "#4FC1FF" },
+
+            -- HTMLタグ（青）— Svelte テンプレート用
+            ["@tag"] = { fg = "#569CD6" },
+            ["@tag.builtin"] = { fg = "#569CD6" },
+            ["@tag.delimiter"] = { fg = "#808080" },
+            ["@tag.attribute"] = { fg = "#9CDCFE" },
+
+            -- プロパティ・パラメータ
+            ["@property"] = { fg = "#9CDCFE" },
+            ["@variable.parameter"] = { fg = "#9CDCFE" },
+            ["@parameter"] = { fg = "#9CDCFE" },
+
+            -- 句読点・ブラケット
+            ["@punctuation.bracket"] = { fg = "#D4D4D4" },
+            ["@punctuation.delimiter"] = { fg = "#D4D4D4" },
+            ["@punctuation.special"] = { fg = "#569CD6" },
+
+            -- Svelte 制御構文 ({#if}, {## each}, {:else} など)
+            ["@keyword.svelte"] = { fg = "#C586C0" },
+            ["@tag.svelte"] = { fg = "#569CD6" },
+            ["@keyword.conditional"] = { fg = "#C586C0" },
+            ["@keyword.repeat"] = { fg = "#C586C0" },
+            ["@keyword.import"] = { fg = "#C586C0" },
+            ["@keyword.function"] = { fg = "#569CD6" },
+
+            -- CSS プロパティ
+            ["@property.css"] = { fg = "#9CDCFE" },
+            ["@type.css"] = { fg = "#D7BA7D" },
+            ["@string.css"] = { fg = "#CE9178" },
+            ["@number.css"] = { fg = "#B5CEA8" },
           }
         end,
       })

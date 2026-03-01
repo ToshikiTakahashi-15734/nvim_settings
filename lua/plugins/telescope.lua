@@ -81,238 +81,19 @@ return {
       local finders = require('telescope.finders')
       local make_entry = require('telescope.make_entry')
       local conf = require('telescope.config').values
-      local action_state = require('telescope.actions.state')
-      local Job = require('plenary.job')
 
-      -- 現在のバッファのパスからgit rootを特定（nvimの起動ディレクトリに依存しない）
+      -- nvimの起動ディレクトリ（getcwd）からgit rootを特定
       local function get_cwd()
-        local bufpath = vim.api.nvim_buf_get_name(0)
-        local bufdir = bufpath ~= "" and vim.fn.fnamemodify(bufpath, ":h") or vim.fn.getcwd()
-        local git_root = vim.fn.systemlist("cd " .. vim.fn.shellescape(bufdir) .. " && git rev-parse --show-toplevel")[1]
+        local cwd = vim.fn.getcwd()
+        local git_root = vim.fn.systemlist("cd " .. vim.fn.shellescape(cwd) .. " && git rev-parse --show-toplevel")[1]
         if vim.v.shell_error == 0 and git_root and git_root ~= "" then
           return git_root
         end
-        return vim.fn.getcwd()
+        return cwd
       end
 
-      local function normalize_path(path)
-        if path == nil or path == '' then
-          return ''
-        end
-        local real = vim.loop.fs_realpath(path)
-        return real ~= nil and real or vim.fn.fnamemodify(path, ':p')
-      end
-
-      local function get_recent_files_in_cwd()
-        local cwd = normalize_path(get_cwd())
-        if cwd ~= '' and not vim.endswith(cwd, '/') then
-          cwd = cwd .. '/'
-        end
-
-        local function in_cwd(path)
-          return path ~= '' and vim.startswith(path, cwd)
-        end
-
-        local recent = {}
-        local seen = {}
-
-        local function add_path(path)
-          local normalized = normalize_path(path)
-          if normalized == '' or not in_cwd(normalized) then
-            return
-          end
-          if not vim.loop.fs_stat(normalized) then
-            return
-          end
-          if not seen[normalized] then
-            seen[normalized] = true
-            table.insert(recent, normalized)
-          end
-        end
-
-        for _, path in ipairs(vim.v.oldfiles) do
-          add_path(path)
-        end
-
-        for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-          if vim.api.nvim_buf_is_loaded(buf) then
-            add_path(vim.api.nvim_buf_get_name(buf))
-          end
-        end
-
-        return recent
-      end
-
-      local function find_files_with_history()
-        vim.cmd('silent! wall') -- 先に保存して検索結果を最新に
-        local cwd = get_cwd()
-        local recent_files = get_recent_files_in_cwd()
-
-        -- 履歴が空のときは cwd 内の全ファイル検索にフォールバック
-        if #recent_files == 0 then
-          builtin.find_files({ cwd = cwd })
-          return
-        end
-
-        local function oldfiles_finder()
-          return finders.new_table({
-            results = recent_files,
-            entry_maker = make_entry.gen_from_file({ cwd = cwd }),
-          })
-        end
-
-        local function switch_to_history(prompt_bufnr)
-          local picker = action_state.get_current_picker(prompt_bufnr)
-          picker:refresh(oldfiles_finder(), { reset_prompt = false })
-        end
-
-        pickers.new({}, {
-          prompt_title = '最近参照したファイル',
-          finder = oldfiles_finder(),
-          sorter = conf.file_sorter({}),
-          previewer = conf.file_previewer({}),
-          attach_mappings = function(prompt_bufnr, map)
-            map('i', '<C-h>', function()
-              switch_to_history(prompt_bufnr)
-            end)
-            map('n', '<C-h>', function()
-              switch_to_history(prompt_bufnr)
-            end)
-            return true
-          end,
-        }):find()
-      end
-
-      local function live_grep_with_history()
-        vim.cmd('silent! wall') -- 先に保存して検索結果を最新に
-        local cwd = get_cwd()
-        local recent_files = get_recent_files_in_cwd()
-        -- デフォルトはプロジェクト全体（cwd）。履歴ファイルのみに絞る場合は <C-h>
-        local history_dirs = #recent_files > 0 and recent_files or { cwd }
-
-        local function live_grep_finder(search_dirs)
-          return finders.new_job(function(prompt)
-            if not prompt or prompt == '' then
-              return nil
-            end
-            if #search_dirs == 0 then
-              return nil
-            end
-            local args = vim.deepcopy(conf.vimgrep_arguments)
-            table.insert(args, '--fixed-strings')
-            table.insert(args, '--')
-            table.insert(args, prompt)
-            for _, dir in ipairs(search_dirs) do
-              table.insert(args, dir)
-            end
-            return args
-          end, make_entry.gen_from_vimgrep({}), nil, cwd)
-        end
-
-        local function switch_to_history(prompt_bufnr)
-          local picker = action_state.get_current_picker(prompt_bufnr)
-          picker:refresh(live_grep_finder(history_dirs), { reset_prompt = false })
-        end
-
-        local function switch_to_all(prompt_bufnr)
-          local picker = action_state.get_current_picker(prompt_bufnr)
-          picker:refresh(live_grep_finder({ cwd }), { reset_prompt = false })
-        end
-
-        pickers.new({}, {
-          prompt_title = '全文検索（プロジェクト全体）',
-          finder = live_grep_finder({ cwd }),
-          previewer = conf.grep_previewer({}),
-          sorter = require('telescope.sorters').empty(),
-          cwd = cwd,
-          attach_mappings = function(prompt_bufnr, map)
-            map('i', '<C-a>', function()
-              switch_to_all(prompt_bufnr)
-            end)
-            map('n', '<C-a>', function()
-              switch_to_all(prompt_bufnr)
-            end)
-            -- 履歴ファイルのみに絞る（最近開いたファイルだけ検索）
-            map('i', '<C-h>', function()
-              switch_to_history(prompt_bufnr)
-            end)
-            map('n', '<C-h>', function()
-              switch_to_history(prompt_bufnr)
-            end)
-            return true
-          end,
-        }):find()
-      end
-
-      local function combined_search()
-        vim.ui.input({ prompt = "検索ワード: " }, function(input)
-          if not input or input == "" then
-            return
-          end
-
-          local cwd = get_cwd()
-          local file_results = Job:new({
-            command = "rg",
-            args = { "--files", "-g", "*" .. input .. "*" },
-            cwd = cwd,
-          }):sync()
-
-          local grep_results = Job:new({
-            command = "rg",
-            args = { "--vimgrep", input },
-            cwd = cwd,
-          }):sync()
-
-          local entries = {}
-          for _, path in ipairs(file_results or {}) do
-            table.insert(entries, { kind = "file", value = path })
-          end
-          for _, line in ipairs(grep_results or {}) do
-            table.insert(entries, { kind = "grep", value = line })
-          end
-
-          vim.fn.setreg("/", input)
-          vim.opt.hlsearch = true
-
-          pickers.new({}, {
-            prompt_title = "ファイル名 + 全文検索",
-            finder = finders.new_table({
-              results = entries,
-              entry_maker = function(entry)
-                if entry.kind == "file" then
-                  return {
-                    value = entry.value,
-                    display = "FILE  " .. entry.value,
-                    ordinal = entry.value,
-                    filename = entry.value,
-                    lnum = 1,
-                    col = 1,
-                    text = entry.value,
-                  }
-                end
-                local filename, lnum, col, text = entry.value:match("([^:]+):(%d+):(%d+):(.*)")
-                if not filename then
-                  return nil
-                end
-                return {
-                  value = entry.value,
-                  display = "GREP  " .. entry.value,
-                  ordinal = entry.value,
-                  filename = filename,
-                  lnum = tonumber(lnum),
-                  col = tonumber(col),
-                  text = text,
-                }
-              end,
-            }),
-            sorter = conf.generic_sorter({}),
-            previewer = conf.grep_previewer({}),
-          }):find()
-        end)
-      end
-
-      -- 1. ファイル名検索（プロジェクト全体） (スペース + f)
-      --    パスをコピペしても検索できるよう、クエリ内の "/" をスペースに置換してマッチさせる
+      -- ファイル名検索（プロジェクト全体） (スペース + f)
+      -- パスをコピペしても検索できるよう、クエリ内の "/" をスペースに置換してマッチさせる
       vim.keymap.set('n', '<leader>f', function()
         local cwd = get_cwd()
         pickers.new({}, {
@@ -324,32 +105,18 @@ return {
           sorter = conf.file_sorter({}),
           previewer = conf.file_previewer({}),
           on_input_filter_cb = function(prompt)
-            -- "/" をスペースに置換してファジーマッチしやすくする（Cursor風）
             return { prompt = prompt:gsub("/", " ") }
           end,
         }):find()
       end, { desc = "ファイル検索（プロジェクト全体）" })
 
-      -- 2. 全文検索（プロジェクト全体） (スペース2回)
-      vim.keymap.set('n', '<leader><leader>', live_grep_with_history, { desc = "全文検索（プロジェクト全体）" })
+      -- 全文検索（プロジェクト全体） (スペース2回)
+      vim.keymap.set('n', '<leader><leader>', function()
+        builtin.live_grep({ cwd = get_cwd() })
+      end, { desc = "全文検索（プロジェクト全体）" })
 
-      -- 3. ファイル履歴表示 (スペース + f + h)
-      vim.keymap.set('n', '<leader>fh', builtin.oldfiles, { desc = "ファイル履歴" })
-
-      -- 4. 全ファイル検索（履歴無視） (スペース + f + a)
-      vim.keymap.set('n', '<leader>fa', function()
-        builtin.find_files({ cwd = get_cwd() })
-      end, { desc = "全ファイル検索" })
-
-      -- 5. 全ショートカット（Vim標準+LSP+自分で決めたもの）の表示
+      -- 全ショートカット表示
       vim.keymap.set('n', '<leader>?', builtin.keymaps, { desc = "Search all keymaps" })
-
-
-      -- 履歴ベースのファイル検索（frecency） (スペース + f + f)
-      vim.keymap.set('n', '<leader>ff', function()
-        require('telescope').extensions.frecency.frecency({ cwd = get_cwd() })
-      end, { desc = "ファイル検索（履歴優先）" })
-      vim.keymap.set('n', '<leader>fg', live_grep_with_history, {})
     end
   }
 }

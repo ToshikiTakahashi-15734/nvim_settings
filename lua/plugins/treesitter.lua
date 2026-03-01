@@ -4,11 +4,8 @@ return {
     lazy = false,
     build = ":TSUpdate",
     config = function()
-      local ok, configs = pcall(require, "nvim-treesitter.configs")
-      if not ok then
-        return
-      end
-      configs.setup({
+      -- nvim-treesitter v1.x: パーサー管理のみ担当
+      require("nvim-treesitter").setup({
         ensure_installed = {
           "lua",
           "vim",
@@ -23,28 +20,33 @@ return {
           "typescript",
           "tsx",
           "svelte",
+          "html",
+          "css",
           "terraform",
           "hcl",
         },
-        highlight = {
-          enable = true,
-          -- Treesitterが使えない環境でも色が出るように保険
-          additional_vim_regex_highlighting = true,
-          -- より詳細なハイライトを有効化
-          disable = {},
-        },
-        indent = { enable = true },
-        -- インクリメンタル選択を有効化
-        incremental_selection = {
-          enable = true,
-          keymaps = {
-            init_selection = "<C-space>",
-            node_incremental = "<C-space>",
-            scope_incremental = "<nop>",
-            node_decremental = "<bs>",
-          },
-        },
       })
+
+      -- Neovim 0.11+: 組み込みAPIでTreesitterハイライト・インデントを有効化
+      vim.api.nvim_create_autocmd("FileType", {
+        callback = function(ev)
+          local ok = pcall(vim.treesitter.start, ev.buf)
+          if ok then
+            vim.bo[ev.buf].indentexpr = "v:lua.require'nvim-treesitter'.indentexpr()"
+          end
+        end,
+      })
+
+      -- インクリメンタル選択
+      vim.keymap.set("n", "<C-space>", function()
+        require("nvim-treesitter.incremental_selection").init()
+      end, { desc = "Start incremental selection" })
+      vim.keymap.set("v", "<C-space>", function()
+        require("nvim-treesitter.incremental_selection").increment()
+      end, { desc = "Increment selection" })
+      vim.keymap.set("v", "<bs>", function()
+        require("nvim-treesitter.incremental_selection").decrement()
+      end, { desc = "Decrement selection" })
     end,
   },
 }
