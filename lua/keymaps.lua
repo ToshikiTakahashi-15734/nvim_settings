@@ -389,6 +389,38 @@ end
 
 keymap.set('n', '<leader>sf', find_files_with_extension, { desc = "拡張子を指定して検索" })
 
+local function live_grep_with_extension()
+    vim.ui.input({ prompt = '拡張子 (例: lua  !json  tsx,jsx  !*.min.js): ', default = vim.g.telescope_grep_ext_filter }, function(ext)
+        if not ext or ext == '' then
+            return
+        end
+        vim.g.telescope_grep_ext_filter = ext
+
+        local globs = {}
+        for e in string.gmatch(ext, '([^,%s]+)') do
+            if e:match('^!') then
+                local pattern = e:sub(2)
+                if not pattern:match('%*') then
+                    pattern = '*.' .. pattern
+                end
+                table.insert(globs, '!' .. pattern)
+            else
+                if not e:match('%*') then
+                    e = '*.' .. e
+                end
+                table.insert(globs, e)
+            end
+        end
+
+        require('telescope.builtin').live_grep({
+            glob_pattern = globs,
+            cwd = get_project_root(),
+        })
+    end)
+end
+
+keymap.set('n', '<leader>sz', live_grep_with_extension, { desc = "拡張子を指定して全文検索" })
+
 -- keymaps.lua に入っている設定
 keymap.set("i", "<D-z>", "<Esc>ui", { desc = "挿入モードで元に戻す" })
 keymap.set("i", "<C-z>", "<Esc>ui", { desc = "挿入モードで元に戻す" })
