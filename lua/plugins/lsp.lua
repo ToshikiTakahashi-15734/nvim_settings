@@ -65,13 +65,37 @@ return {
       vim.lsp.enable("svelte")
 
       -- その他のLSP設定
-      -- phpactor（PHPStan をグローバルで有効化）
+      -- phpactor（PHPStan をグローバルで有効化、確認プロンプト抑制）
       vim.lsp.config("phpactor", {
         capabilities = capabilities,
         autostart = true,
         init_options = {
           ["language_server_phpstan.enabled"] = true,
+          ["language_server_phpstan.level"] = "5",
+          ["phpunit.enabled"] = false,
+          ["language_server_php_cs_fixer.enabled"] = false,
         },
+        handlers = {
+          -- PHPStan確認プロンプトを自動で「yes」応答
+          ["window/showMessageRequest"] = function(_, result)
+            if result and result.message and result.message:match("[Pp]hp[Ss]tan") then
+              -- "yes" (最初の選択肢) を自動選択
+              if result.actions and #result.actions > 0 then
+                return result.actions[1]
+              end
+            end
+            return vim.lsp.handlers["window/showMessageRequest"](_, result)
+          end,
+        },
+        on_attach = function(client, bufnr)
+          -- diffview:// バッファではLSPを無効化
+          local bufname = vim.api.nvim_buf_get_name(bufnr)
+          if bufname:match("^diffview://") then
+            vim.schedule(function()
+              vim.lsp.buf_detach_client(bufnr, client.id)
+            end)
+          end
+        end,
       })
       vim.lsp.enable("phpactor")
 

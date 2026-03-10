@@ -15,9 +15,10 @@ return {
           ['<C-Space>'] = cmp.mapping.complete(),
           ['<CR>'] = cmp.mapping.confirm({ select = true }),
           ['<Tab>'] = cmp.mapping(function(fallback)
-            local copilot = require("copilot.suggestion")
-            if copilot.is_visible() then
-              copilot.accept()
+            -- minuet-ai のゴーストテキストが表示中ならそちらを優先
+            local ok_minuet, minuet_vt = pcall(require, "minuet.virtualtext")
+            if ok_minuet and minuet_vt.action and minuet_vt.action.is_visible() then
+              minuet_vt.action.accept()
             elseif cmp.visible() then
               cmp.select_next_item()
             else
