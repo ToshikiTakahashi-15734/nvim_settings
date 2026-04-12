@@ -12,6 +12,7 @@ local function get_comment_prefix()
     if ft == "lua" or ft == "python" or ft == "sh" or ft == "yaml" or ft == "vim" or ft == "terraform" then
       cs = "# %s"
     else
+
       cs = "// %s"
     end
   end
@@ -310,11 +311,12 @@ end, { desc = "Go to definition" })
 -- スペース + g で Lazygit を起動
 keymap.set("n", "<leader>g", ":LazyGit<CR>", { desc = "Lazygitを起動 (Git操作)" })
 
--- diffview: 差分ビュー
-keymap.set("n", "<leader>df", "<cmd>DiffviewOpen<CR>", { desc = "差分ビューを開く" })
-keymap.set("n", "<leader>dfh", "<cmd>DiffviewFileHistory %<CR>", { desc = "ファイルの変更履歴" })
-keymap.set("n", "<leader>dfH", "<cmd>DiffviewFileHistory<CR>", { desc = "リポジトリの変更履歴" })
+-- diffview: 差分ビュー（checktime で外部変更を再読み込みしてから表示）
+keymap.set("n", "<leader>df", "<cmd>checktime<CR><cmd>DiffviewOpen<CR>", { desc = "差分ビューを開く" })
+keymap.set("n", "<leader>dfh", "<cmd>checktime<CR><cmd>DiffviewFileHistory %<CR>", { desc = "ファイルの変更履歴" })
+keymap.set("n", "<leader>dfH", "<cmd>checktime<CR><cmd>DiffviewFileHistory<CR>", { desc = "リポジトリの変更履歴" })
 keymap.set("n", "<leader>dfc", "<cmd>DiffviewClose<CR>", { desc = "差分ビューを閉じる" })
+keymap.set("n", "<leader>dfr", "<cmd>DiffviewRefresh<CR>", { desc = "差分ビューをリフレッシュ" })
 
 -- gitsigns: hunk間の移動
 keymap.set("n", "]c", function()

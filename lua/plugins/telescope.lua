@@ -50,6 +50,17 @@ return {
           file_sorter = require('telescope.sorters').get_generic_fuzzy_sorter,
           generic_sorter = require('telescope.sorters').get_generic_fuzzy_sorter,
           path_display = path_display_filename_first_truncate,
+          mappings = {
+            i = {
+              -- システムクリップボードからペースト
+              ['<C-v>'] = function()
+                vim.api.nvim_feedkeys(
+                  vim.api.nvim_replace_termcodes('<C-r>+', true, false, true),
+                  'n', false
+                )
+              end,
+            },
+          },
         },
         extensions = {
           fzf = {
@@ -82,7 +93,7 @@ return {
       local make_entry = require('telescope.make_entry')
       local conf = require('telescope.config').values
 
-      -- nvimの起動ディレクトリ（getcwd）からgit rootを特定
+      -- cwdからgit rootを特定、なければcwdをそのまま使用
       local function get_cwd()
         local cwd = vim.fn.getcwd()
         local git_root = vim.fn.systemlist("cd " .. vim.fn.shellescape(cwd) .. " && git rev-parse --show-toplevel")[1]

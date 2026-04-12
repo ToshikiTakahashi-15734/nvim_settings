@@ -5,7 +5,19 @@ return {
   -- キーバインドは keymaps.lua で一元管理
   config = function()
     require("diffview").setup({
-      enhanced_diff_hl = true,
+      enhanced_diff_hl = false,
+      hooks = {
+        -- 開いた直後に diff パネルが "-1" になるタイミング問題を回避
+        view_opened = function(view)
+          vim.schedule(function()
+            local lib = require("diffview.lib")
+            local cv = lib.get_current_view()
+            if cv then
+              cv:update_files()
+            end
+          end)
+        end,
+      },
       view = {
         default = {
           layout = "diff2_horizontal",

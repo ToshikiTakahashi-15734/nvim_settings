@@ -242,20 +242,28 @@ return {
         borderchars = { "─", "│", "─", "│", "╭", "╮", "╯", "╰" },
       }
 
+      -- ホバーウィンドウのボーダー設定
+      vim.lsp.handlers["textDocument/hover"] = vim.lsp.with(
+        vim.lsp.handlers.hover,
+        { border = "rounded" }
+      )
+
       -- 4. キーマップ設定とセマンティックハイライト
       vim.api.nvim_create_autocmd('LspAttach', {
         callback = function(ev)
           local opts = { buffer = ev.buf }
           local client = vim.lsp.get_client_by_id(ev.data.client_id)
-          
+
           -- キーマップ設定（定義・参照とも小窓で表示）
           vim.keymap.set('n', 'gd', function()
             with_real_file(function()
+              vim.cmd("normal! m'")
               require('telescope.builtin').lsp_definitions(vim.tbl_extend("force", small_win_opts, {}))
             end)
           end, vim.tbl_extend("force", opts, { desc = "Go to definition (small window)" }))
           vim.keymap.set('n', '<D-d>', function()
             with_real_file(function()
+              vim.cmd("normal! m'")
               require('telescope.builtin').lsp_definitions(vim.tbl_extend("force", small_win_opts, {}))
             end)
           end, vim.tbl_extend("force", opts, { desc = "Go to definition (small window)" }))
@@ -267,8 +275,11 @@ return {
           end, vim.tbl_extend("force", opts, { desc = "References (peek window)" }))
           vim.keymap.set('n', ']d', vim.diagnostic.goto_next, opts)
           vim.keymap.set('n', '[d', vim.diagnostic.goto_prev, opts)
-          -- 現在行の診断を枠付きフロートで表示（VSCodeのホバー風）
-          vim.keymap.set('n', 'K', function()
+          -- K: LSPホバーで型情報・ドキュメントを表示（VSCode のカーソルホバーと同等）
+          vim.keymap.set('n', 'K', vim.lsp.buf.hover,
+            vim.tbl_extend("force", opts, { desc = "LSP hover (type info / docs)" }))
+          -- <leader>k: 診断（エラー・警告）をフロートで表示
+          vim.keymap.set('n', '<leader>k', function()
             vim.diagnostic.open_float(nil, { scope = "cursor", border = "rounded" })
           end, vim.tbl_extend("force", opts, { desc = "Show diagnostic in float" }))
 
