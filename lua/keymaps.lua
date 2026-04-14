@@ -285,9 +285,11 @@ keymap.set("n", "<D-z>", "u", { desc = "Undo" })
 
 -- 前のファイル（ジャンプ）へ
 keymap.set("n", "<A-Left>", "<C-o>", { noremap = true, silent = true })
+keymap.set("n", "\x1bb", "<C-o>", { noremap = true, silent = true })
 
 -- 次のファイル（ジャンプ）へ
 keymap.set("n", "<A-Right>", "<C-i>", { noremap = true, silent = true })
+keymap.set("n", "\x1bf", "<C-i>", { noremap = true, silent = true })
 
 -- タブを開く → ⌘T
 keymap.set("n", "<D-t>", ":tabedit<CR>", { desc = "新しいタブを開く" })
