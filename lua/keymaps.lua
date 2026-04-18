@@ -133,9 +133,6 @@ local function move_lines_down()
   vim.api.nvim_buf_set_mark(0, "<", end_lnum + 1, 1, {})
   vim.api.nvim_buf_set_mark(0, ">", end_lnum + #lines, 1, {})
   vim.fn.cursor(end_lnum + 1, 1)
-  if vim.fn.mode() == "V" or vim.fn.mode() == "v" then
-    vim.cmd("normal! '<V'>")
-  end
 end
 
 local function move_lines_up()
@@ -150,9 +147,6 @@ local function move_lines_up()
   vim.api.nvim_buf_set_mark(0, "<", start_lnum - 1, 1, {})
   vim.api.nvim_buf_set_mark(0, ">", start_lnum - 2 + #lines, 1, {})
   vim.fn.cursor(start_lnum - 1, 1)
-  if vim.fn.mode() == "V" or vim.fn.mode() == "v" then
-    vim.cmd("normal! '<V'>")
-  end
 end
 
 keymap.set("n", "<A-Down>", function()
@@ -453,7 +447,7 @@ keymap.set("n", "<A-x>", "<C-w>c", { desc = "ペインを閉じる（WezTerm互�
 
 -- Option + Shift + F でコード整形
 keymap.set({ "n", "v", "i" }, "<M-S-f>", function()
-    require("conform").format({ async = true, lsp_fallback = false })
+    require("conform").format({ async = true, lsp_fallback = true })
 end, { desc = "Format code" })
 
 -- 現在の行のエラーメッセージをクリップボードにコピーする設定

@@ -6,7 +6,7 @@ return {
         {
             "<A-S-f>",
             function()
-                require("conform").format({ async = true, lsp_fallback = false })
+                require("conform").format({ async = true, lsp_fallback = true })
             end,
             mode = "",
             desc = "Format buffer",
@@ -48,8 +48,8 @@ return {
                 },
             },
             format_on_save = {
-                timeout_ms = 500,
-                lsp_fallback = false,
+                timeout_ms = 3000,
+                lsp_fallback = true,
                 stop_after_first = true,
             },
         }
