@@ -39,4 +39,5 @@ return {
     -- diff を却下
     { "<leader>ad", "<cmd>ClaudeCodeDiffDeny<cr>", desc = "diff を却下" },
   },
+
 }
