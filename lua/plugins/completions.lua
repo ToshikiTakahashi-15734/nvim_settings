@@ -11,6 +11,12 @@ return {
     config = function()
       local cmp = require("cmp")
       cmp.setup({
+        snippet = {
+          -- LSPが返すスニペット形式の補完を展開する（未設定だと確定時にエラーになる）
+          expand = function(args)
+            vim.snippet.expand(args.body)
+          end,
+        },
         mapping = cmp.mapping.preset.insert({
           ['<C-Space>'] = cmp.mapping.complete(),
           ['<CR>'] = cmp.mapping.confirm({ select = true }),

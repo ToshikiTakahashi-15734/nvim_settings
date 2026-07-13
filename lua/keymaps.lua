@@ -94,7 +94,7 @@ keymap.set("i", "q", function()
   if c == 0 or c == nil then
     vim.api.nvim_feedkeys("q", "n", true)
   elseif c == 119 or c == string.byte("w") then
-    vim.api.nvim_feedkeys("<Esc>viw", "n", false)
+    vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>viw", true, false, true), "n", false)
   else
     vim.api.nvim_feedkeys("q" .. (type(c) == "number" and vim.fn.nr2char(c) or tostring(c)), "n", true)
   end
@@ -288,17 +288,7 @@ keymap.set("n", "\x1bf", "<C-i>", { noremap = true, silent = true })
 -- タブを開く → ⌘T
 keymap.set("n", "<D-t>", ":tabedit<CR>", { desc = "新しいタブを開く" })
 
--- gd → 定義ジャンプ
-keymap.set("n", "gd", function()
-    local clients = vim.lsp.get_clients({ bufnr = 0 })
-    for _, client in ipairs(clients) do
-        if client.server_capabilities.definitionProvider then
-            vim.lsp.buf.definition({ reuse_win = true })
-            return
-        end
-    end
-    vim.notify("定義ジャンプに対応したLSPがありません", vim.log.levels.WARN)
-end, { desc = "Go to definition" })
+-- gd → 定義ジャンプは lsp.lua の LspAttach でバッファローカルに設定
 
 -- ==========================================
 -- Git 操作
@@ -418,11 +408,6 @@ local function live_grep_with_extension()
 end
 
 keymap.set('n', '<leader>sz', live_grep_with_extension, { desc = "拡張子を指定して全文検索" })
-
--- keymaps.lua に入っている設定
-keymap.set("i", "<D-z>", "<Esc>ui", { desc = "挿入モードで元に戻す" })
-keymap.set("i", "<C-z>", "<Esc>ui", { desc = "挿入モードで元に戻す" })
-
 
 -- ALT + n: 次のタブへ移動（WezTermのウィンドウ切り替えに対応）
 keymap.set("n", "<A-n>", ":tabnext<CR>", { desc = "次のタブへ（WezTerm互換）" })

@@ -72,6 +72,12 @@ return {
             ["@type.css"] = { fg = "#D7BA7D" },
             ["@string.css"] = { fg = "#CE9178" },
             ["@number.css"] = { fg = "#B5CEA8" },
+
+            -- 透明化（transparent.nvim の代替）
+            NormalFloat = { bg = "NONE" },
+            NvimTreeNormal = { bg = "NONE" },
+            LineNr = { bg = "NONE" },
+            SignColumn = { bg = "NONE" },
           }
         end,
       })

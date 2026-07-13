@@ -5,7 +5,6 @@ return {
       "williamboman/mason.nvim",
       "williamboman/mason-lspconfig.nvim",
       "hrsh7th/cmp-nvim-lsp",
-      "folke/trouble.nvim",
     },
     config = function()
       -- 1. Masonの基本セットアップ
@@ -242,12 +241,6 @@ return {
         borderchars = { "─", "│", "─", "│", "╭", "╮", "╯", "╰" },
       }
 
-      -- ホバーウィンドウのボーダー設定
-      vim.lsp.handlers["textDocument/hover"] = vim.lsp.with(
-        vim.lsp.handlers.hover,
-        { border = "rounded" }
-      )
-
       -- 4. キーマップ設定とセマンティックハイライト
       vim.api.nvim_create_autocmd('LspAttach', {
         callback = function(ev)
@@ -273,11 +266,16 @@ return {
               vim.cmd('Glance references')
             end)
           end, vim.tbl_extend("force", opts, { desc = "References (peek window)" }))
-          vim.keymap.set('n', ']d', vim.diagnostic.goto_next, opts)
-          vim.keymap.set('n', '[d', vim.diagnostic.goto_prev, opts)
+          vim.keymap.set('n', ']d', function()
+            vim.diagnostic.jump({ count = 1, float = true })
+          end, opts)
+          vim.keymap.set('n', '[d', function()
+            vim.diagnostic.jump({ count = -1, float = true })
+          end, opts)
           -- K: LSPホバーで型情報・ドキュメントを表示（VSCode のカーソルホバーと同等）
-          vim.keymap.set('n', 'K', vim.lsp.buf.hover,
-            vim.tbl_extend("force", opts, { desc = "LSP hover (type info / docs)" }))
+          vim.keymap.set('n', 'K', function()
+            vim.lsp.buf.hover({ border = "rounded" })
+          end, vim.tbl_extend("force", opts, { desc = "LSP hover (type info / docs)" }))
           -- <leader>k: 診断（エラー・警告）をフロートで表示
           vim.keymap.set('n', '<leader>k', function()
             vim.diagnostic.open_float(nil, { scope = "cursor", border = "rounded" })

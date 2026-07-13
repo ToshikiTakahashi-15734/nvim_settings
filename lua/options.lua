@@ -46,5 +46,3 @@ _G.diagnostic_statusline = function()
     end
     return string.format("E:%d W:%d", counts.error, counts.warn)
 end
-
-opt.statusline = "%f %m%r%h%w%=%{v:lua.diagnostic_statusline()} %l/%L:%c"

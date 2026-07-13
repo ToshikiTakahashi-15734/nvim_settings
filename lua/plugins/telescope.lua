@@ -5,10 +5,6 @@ return {
     dependencies = {
       'nvim-lua/plenary.nvim',
       {
-        'nvim-telescope/telescope-frecency.nvim',
-        dependencies = { 'kkharji/sqlite.lua' },
-      },
-      {
         'nvim-telescope/telescope-fzf-native.nvim',
         build = 'make',
       },
@@ -69,23 +65,11 @@ return {
             override_file_sorter = true,
             case_mode = "smart_case",
           },
-          frecency = {
-            db_safe_mode = false,
-            show_scores = true,
-            show_unindexed = true,
-            ignore_patterns = { "*.git/*", "*/tmp/*" },
-            workspaces = {
-              ["conf"] = vim.fn.expand("~/.config"),
-              ["project"] = vim.fn.getcwd(),
-            },
-          },
         },
       })
-      
+
       -- fzf-native 拡張を読み込み（C実装で高速・高精度なファジーマッチ）
       require('telescope').load_extension('fzf')
-      -- Frecency 拡張を読み込み
-      require('telescope').load_extension('frecency')
 
       local builtin = require('telescope.builtin')
       local pickers = require('telescope.pickers')

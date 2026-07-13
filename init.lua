@@ -1,14 +1,6 @@
 vim.g.mapleader = " "
 vim.g.maplocalleader = " "
-vim.opt.clipboard = "unnamedplus"
 vim.opt.termguicolors = true
-
--- lua/options.lua を読み込む
-require("options")
--- lua/keymaps.lua を読み込む
-require("keymaps")
--- コメント・文字列外では全角を半角に自動変換
-require("zenkaku")
 
 -- lazy.nvimのインストールスクリプト
 local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
@@ -24,15 +16,15 @@ if not vim.loop.fs_stat(lazypath) then
 end
 vim.opt.rtp:prepend(lazypath)
 
--- 前に書いたrequireをこの下に移動させる
+-- lua/options.lua を読み込む
 require("options")
+-- lua/keymaps.lua を読み込む
 require("keymaps")
+-- コメント・文字列外では全角を半角に自動変換
 require("zenkaku")
 
 -- pluginsフォルダの中身を読み込む設定
 require("lazy").setup("plugins")
-
-vim.opt.clipboard = "unnamedplus"
 
 -- ==========================================
 -- 外部変更の自動再読み込み（Claude Code 等）
