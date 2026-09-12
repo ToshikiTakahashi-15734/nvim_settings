@@ -277,6 +277,10 @@ keymap.set("i", "<C-z>", "<Esc>ui", { desc = "Undo in insert mode" })
 -- ノーマルモードの Command + z もついでに設定
 keymap.set("n", "<D-z>", "u", { desc = "Undo" })
 
+-- Command + u でやり直し（Undo の逆 = Redo）
+keymap.set("n", "<D-u>", "<C-r>", { desc = "Redo" })
+keymap.set("i", "<D-u>", "<Esc><C-r>i", { desc = "Redo in insert mode" })
+
 -- 前のファイル（ジャンプ）へ
 keymap.set("n", "<A-Left>", "<C-o>", { noremap = true, silent = true })
 keymap.set("n", "\x1bb", "<C-o>", { noremap = true, silent = true })
