@@ -16,6 +16,10 @@ if not vim.loop.fs_stat(lazypath) then
 end
 vim.opt.rtp:prepend(lazypath)
 
+-- コマンド集（<leader>H）がキーマップ・コマンドの定義元を記録できるようにする
+-- （どこで定義したかで自動分類するため、keymaps やプラグインより先に呼ぶ）
+require("cheatsheet").track()
+
 -- lua/options.lua を読み込む
 require("options")
 -- lua/keymaps.lua を読み込む

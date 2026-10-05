@@ -22,6 +22,7 @@ alias keys='echo "
   gn         : 次のタブへ (Go Next)
   gp         : 前のタブへ (Go Previous)
   tx         : タブを閉じる (Tab X)
+  Cmd + t    : 新規タブを開く
 
 ■ 全体操作 / 編集
 　:e　　　　 : テキストファイルを作成（テキストファイルがない場合）
@@ -61,10 +62,6 @@ alias keys='echo "
   Space w '  : '' で囲む   Space w p  : () で囲む
   Space w s  : [] で囲む   Space w `  : `` で囲む
 
-■ 検索 (Telescope等)
-  Space f f  : ファイル検索
-  Space f g  : 文字検索 (Grep)
-
 ■ ファイルを開く時 (検索画面など)
   Enter      : 現在の窓で開く
   Ctrl + v   : 左右に分割して開く (Vertical)
@@ -77,12 +74,11 @@ alias keys='echo "
   <leader>nh  : 検索ハイライトを消す
   gd          : 定義先にジャンプ（小窓）  gr : 参照一覧（右パネル・ファイル別）
   K           : 現在行のエラーを枠で表示（VSCodeのホバー風）
-  <leader>c   : パスのコピー
-  <leader>c l : 行番号付きでパスをコピー
+  <leader>ce  : ファイルパス:行番号（＋その行のエラー）をコピー
 
 ■ 画面分割
-  <leader>sv  : 画面を上下に分割
-  <leader>sh  : 画面を左右に分割
+  <leader>sv  : 画面を左右に分割（縦線で区切る）
+  <leader>sh  : 画面を上下に分割（横線で区切る）
   Ctrl + w + h/j/k/l : 画面間を移動
   option + commnd + テンキー：画面間を移動
   :p          : 画面分割したタブを削除
@@ -94,6 +90,109 @@ alias keys='echo "
   <leader>?   : 自作ショートカット一覧
   <leader>nh  : 検索ハイライトを消す
   /（前方）・?（後方） : 文字列検索
+  Enter 2回   : 検索プロンプトを出す（/ と同じ）
+  Esc         : 検索ハイライトを消す
+  Cmd + f     : ファイル内をあいまい検索
+  <leader>sf  : 拡張子を指定してファイル検索
+  <leader>sz  : 拡張子を指定して全文検索
+
+■ コマンド集 (Cheatsheet)
+  <leader>H   : コマンド集を開く（備忘録・キーマップ・コマンドの3タブ）
+  :Cheatsheet : コマンド集を開く
+  :Cheatsheet search  : いきなり横断検索（Telescope）を開く
+  :Cheatsheet memo / keymaps / cmds : 指定したタブで開く
+# コマンド集の画面内
+  Tab / Shift+Tab : タブ切替（1 / 2 / 3 で直接切替）
+  /           : 全タブ横断で絞り込み検索
+  Enter       : キーマップは実行、コマンドはコマンドラインに入力
+  e           : 備忘録（このファイル）を編集
+  q / Esc     : 閉じる
+
+■ 編集の便利キー
+  aa          : コメントのトグル（ビジュアル選択中なら選択範囲）
+  Ctrl + a / Cmd + a : 全選択
+  Cmd + z     : 元に戻す（インサート中も可）
+  Cmd + u     : やり直し（インサート中も可）
+  Ctrl + Space : 構文のまとまり単位で選択を広げる（押すたびに拡大）
+  BS          : （ビジュアル中）広げた選択を1段階戻す
+  Option + ← / → : ジャンプ履歴を戻る / 進む
+  Option + Shift + f : コード整形
+  <leader>ya  : 全コピー
+  <leader>e   : ファイルツリーを開閉
+  T           : フローティングターミナルを開閉
+  全角の入力  : コメント・文字列の外では自動で半角に変換（フォーカス時は英数に切替）
+
+■ LSP（定義・参照・エラー）
+  gd / Cmd + d : 定義へジャンプ（小窓）
+  gr          : 参照一覧（peekウィンドウ）
+  K           : 型情報・ドキュメントを表示
+  <leader>k   : カーソル位置のエラー・警告をフロート表示
+  ]d / [d     : 次 / 前のエラーへ
+  <leader>ce  : ファイルパス:行番号（＋その行のエラー）をコピー
+
+■ Git（差分・変更箇所）
+  <leader>df  : 差分ビューを開く
+  <leader>dfh : このファイルの変更履歴
+  <leader>dfH : リポジトリ全体の変更履歴
+  <leader>dfc : 差分ビューを閉じる
+  <leader>dfr : 差分ビューをリフレッシュ
+  ]c / [c     : 次 / 前の変更箇所へ
+  <leader>hp  : 変更をプレビュー
+  <leader>hs  : 変更をステージ（ビジュアルなら選択範囲）
+  <leader>hr  : 変更をリセット（ビジュアルなら選択範囲）
+  <leader>hu  : ステージを取り消し
+  <leader>hS  : ファイル全体をステージ
+  <leader>hR  : ファイル全体をリセット
+  <leader>hd  : 差分を表示（index と比較）
+  <leader>hD  : 差分を表示（前回commit と比較）
+  <leader>hb  : 行のblame詳細
+  <leader>hB  : blame表示の切替
+  <leader>hl  : 削除行の表示切替
+
+■ GitHub PR
+  :GR / <leader>Gp : 自分のPR・レビュー待ちPRの常駐パネルを開閉（30秒ごとに自動更新）
+  <leader>Gr / :GhReviewPRs : 同じ一覧をTelescopeで絞り込み検索
+# パネルの中
+  Enter       : ブラウザで開く
+  r           : 手動更新
+  q           : 閉じる
+
+■ React コンポーネントツリー
+  <leader>rt  : 現在ファイルのコンポーネントツリーを表示
+  <leader>rp  : ルートコンポーネントを選んでツリー表示
+  <leader>rd  : ツリーのデバッグ（treesitterがJSXを認識しているか確認）
+# ツリーの中
+  Enter       : そのコンポーネントのファイルを開く
+  o           : そのコンポーネントを起点にツリーを開き直す
+  q / Esc     : 閉じる
+
+■ DB操作 (vim-dadbod)
+  接続情報は ~/.config/nvim/db.setting に「接続名 = URL」で書く（Git管理外）
+  <leader>db  : サイドバーにDBのテーブル一覧を表示（開閉）
+  <leader>dt  : テーブルを絞り込み検索して中身を見る
+  <leader>dq  : このプロジェクト専用のSQL練習ファイルを開く（.sql/scratch.sql）
+  <leader>dc  : このバッファが使う接続を選び直す（= :DBSelect）
+  <leader>de  : テーブルを選んでER図を描く（= :ER）
+  :Table      : テーブル一覧を表示（キャッシュも取り直す）
+  :Table 名前 : テーブルの中身を表示（Tab で名前を補完）
+  :Table 名前 5 : 先頭5行だけ表示
+  :Table 名前 id = 3 : 条件を付けて絞り込む
+  :Table! 名前 : 列の定義（型・NULL可否・既定値）を見る
+  :ER 名前    : ER図を描く（:ER 名前 ホップ数 で範囲指定、! で外部キーを取り直す）
+  :DBSelect   : このバッファが使うDB接続を選び直す
+  :DB クエリ  : その場でクエリを実行
+# SQLファイルの中
+  <leader>S   : カーソル位置のクエリを実行（ビジュアル選択中なら選択範囲を実行）
+  スニペット  : select / join / groupby などを打って補完から選ぶ（一覧はコマンド集のスニペットタブ）
+# <leader>dt の検索画面の中
+  Enter       : テーブルの中身を表示
+  Ctrl + d    : 列定義を見る
+  Ctrl + t    : 件数を数える
+  Ctrl + e    : ER図を描く
+  Ctrl + y    : テーブル名をカーソル位置に挿入
+# <leader>de の検索画面の中
+  Enter       : 1ホップ分のER図
+  Ctrl + d    : 2ホップ分のER図
 
 ■ Claude Code (claudecode.nvim)
   Ctrl+\      : コード ⇔ Claude にフォーカス切替（エディタ側）
@@ -131,6 +230,10 @@ alias keys='echo "
 　s     : コミットを一つにまとめる (Squash)
 　r     : コミットメッセージの書き換え (Reword)
 　g     : コミットのリセット（Soft / Hard 等を選択可能）
+
+■ その他
+  :Sengoku    : 戦国風雲録（Vimで天下統一する戦国SLG）を起動
+  :SengokuLoad : 戦国風雲録のセーブデータを読み込む
 
 ■ プラグイン管理 (Lazy.nvim)
   :Lazy        : プラグインの状態を確認 (現在の画面)

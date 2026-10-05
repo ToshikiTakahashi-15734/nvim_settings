@@ -6,18 +6,26 @@
 --   ・<leader>dt  テーブル名を絞り込み検索して中身を表示
 --   ・<leader>dq  いまのプロジェクト専用のSQL練習ファイルを開く
 --   ・<leader>db  サイドバーにDBのテーブル一覧を表示
+--   ・<leader>dc  このバッファが使う接続を選び直す（= :DBSelect）
+--   ・<leader>de  テーブルを選んでER図を描く（= :ER）
 --   ・<leader>S   カーソル位置のクエリをその場で実行
 --   ・実DBのスキーマからテーブル名・カラム名を補完
 --     （= ターミナルで showdb zinger しなくてよくなる）
 --
 -- 接続情報は db.setting（Git管理外）に書く。
+--
+-- どのDBに繋ぐかは、次の順で決まる（resolve_db を参照）:
+--   ① そのバッファがすでに繋いでいる接続（b:db）
+--   ② DBUI のツリーから開いたバッファの接続
+--   ③ プロジェクト名（gitルートのフォルダ名）と同じ接続名
+--   ④ このセッションで自分で選んだ接続
+-- どれにも当てはまらなければ、その場でDBを選んでもらう。
+-- 複数のDBを開いていても、別のDBのテーブル名が混ざらないようにするため、
+-- 既定の接続へ黙って落とすことはしない。
 -- ============================================================
 
 -- 接続情報を書いておくファイル（Neovim の設定ディレクトリ直下）
 local SETTING_FILE = "db.setting"
-
--- プロジェクト名に対応する接続が見つからなかったときに使う接続名
-local FALLBACK_DB = "zinger"
 
 -- プロジェクト配下に作るSQL置き場のフォルダ名
 local SQL_DIR = ".sql"
@@ -122,12 +130,69 @@ local function project_root()
 end
 
 -- ------------------------------------------------------------
+-- URL から接続名を引く
+-- ------------------------------------------------------------
+-- 画面に出すのは db.setting の接続名（zinger など）だけにする。
+-- 一覧に無いURLを出すときは、パスワード部分を伏せ字にする。
+local function db_label(url)
+    if type(url) ~= "string" or url == "" then
+        return "?"
+    end
+    for name, u in pairs(vim.g.dbs or {}) do
+        if u == url then
+            return name
+        end
+    end
+    return (url:gsub("://[^@/]*@", "://***@"))
+end
+
+-- このセッションで自分で選んだ接続を覚えておく。
+-- 手がかりが何も無いときの最後の頼りにする。
+local last_picked_url = nil
+
+-- ------------------------------------------------------------
+-- DBUI のツリーから開いたバッファの接続を取り出す
+-- ------------------------------------------------------------
+local function dbui_db()
+    local key = vim.b.dbui_db_key_name
+    if type(key) ~= "string" or key == "" then
+        return nil
+    end
+    if vim.fn.exists("*db_ui#get_conn_info") == 0 then
+        return nil
+    end
+    local ok, info = pcall(vim.fn["db_ui#get_conn_info"], key)
+    if ok and type(info) == "table" and type(info.url) == "string" and info.url ~= "" then
+        return info.url
+    end
+    return nil
+end
+
+-- ------------------------------------------------------------
 -- このバッファを繋ぐべきDBを決める
 -- ------------------------------------------------------------
+-- 複数のDBを開いていると「サイドバーで見ているDB」と
+-- 「:Table や <leader>dt が使うDB」が食い違いやすい。
+-- そこで、バッファがすでに持っている接続を何よりも優先する。
+-- 最後まで決まらないときは nil を返し、呼び出し側で選んでもらう
+-- （黙って既定のDBに落ちると、別DBのテーブル名が出てしまうため）。
 local function resolve_db()
     local dbs = vim.g.dbs or {}
 
-    -- ① プロジェクト名（gitルートのフォルダ名）と同じ接続名を探す。
+    -- ① このバッファがすでに繋いでいる接続。
+    --    DBUI から開いたバッファ、:DBUIFindBuffer で繋ぎ替えたバッファ、
+    --    SQLバッファに自動で紐付けた接続がここに入っている。
+    if type(vim.b.db) == "string" and vim.b.db ~= "" then
+        return vim.b.db
+    end
+
+    -- ② DBUI のツリーから開いたバッファ（b:db がまだ無い場合）
+    local from_ui = dbui_db()
+    if from_ui then
+        return from_ui
+    end
+
+    -- ③ プロジェクト名（gitルートのフォルダ名）と同じ接続名を探す。
     --    例) ~/develop/zinger で開けば db.setting の zinger に繋がる。
     --    プロジェクトごとに接続を切り替えたいときは、db.setting の
     --    接続名をリポジトリのフォルダ名に合わせておくだけでよい。
@@ -136,14 +201,50 @@ local function resolve_db()
         return dbs[name]
     end
 
-    -- ② 見つからなければ既定の接続
-    if dbs[FALLBACK_DB] then
-        return dbs[FALLBACK_DB]
+    -- ④ このセッションで自分で選んだ接続
+    if last_picked_url and last_picked_url ~= "" then
+        return last_picked_url
     end
 
-    -- ③ それも無ければ db.setting の先頭の接続
-    local _, first = next(dbs)
-    return first
+    return nil
+end
+
+-- ------------------------------------------------------------
+-- 接続を選んでもらう
+-- ------------------------------------------------------------
+-- 選んだ接続はこのバッファに覚えさせる（b:db）ので、
+-- 以降の :Table / <leader>dt / 補完はすべてそのDBを向く。
+local function choose_db(fn)
+    local dbs = vim.g.dbs or {}
+    local names = vim.tbl_keys(dbs)
+    table.sort(names)
+
+    if #names == 0 then
+        vim.notify(SETTING_FILE .. " に接続が書かれていません", vim.log.levels.WARN)
+        return
+    end
+
+    vim.ui.select(names, { prompt = "どのDBに繋ぎますか？" }, function(choice)
+        if not choice then
+            return
+        end
+        local url = dbs[choice]
+        vim.b.db = url
+        last_picked_url = url
+        vim.notify("DB: " .. choice .. " に繋ぎました", vim.log.levels.INFO)
+        if fn then
+            fn(url)
+        end
+    end)
+end
+
+-- 接続が決まっていればそのまま、決まらなければ選んでから処理を続ける
+local function with_db(fn)
+    local url = resolve_db()
+    if url then
+        return fn(url)
+    end
+    choose_db(fn)
 end
 
 -- ------------------------------------------------------------
@@ -152,9 +253,9 @@ end
 -- <プロジェクトルート>/.sql/scratch.sql を開く。
 -- 置き場ごと Git の管理外にするので、業務リポジトリの
 -- git status を一切汚さない。
-local function open_project_sql()
+-- 接続が決まった状態で呼ばれる本体
+local function open_project_sql_for(url)
     local root = project_root()
-    local url = resolve_db()
     local dir = root .. "/" .. SQL_DIR
 
     if vim.fn.isdirectory(dir) == 0 then
@@ -186,6 +287,11 @@ local function open_project_sql()
     end
 
     vim.cmd("edit " .. vim.fn.fnameescape(file))
+end
+
+-- 接続が決まっていなければ、先にDBを選んでもらう
+local function open_project_sql()
+    with_db(open_project_sql_for)
 end
 
 -- ------------------------------------------------------------
@@ -265,13 +371,7 @@ end
 --
 -- テーブル名は <Tab> で補完できる。部分一致なので、名前の途中を
 -- 打ってから <Tab> でも候補が出る。
-local function cmd_table(opts)
-    local url = resolve_db()
-    if not url then
-        vim.notify(SETTING_FILE .. " に接続が書かれていません", vim.log.levels.WARN)
-        return
-    end
-
+local function cmd_table_for(url, opts)
     local name = opts.fargs[1]
 
     -- 引数なし → 一覧を表示しつつ、補完用のキャッシュを取り直す
@@ -308,10 +408,20 @@ local function cmd_table(opts)
     run_query(url, query)
 end
 
--- <Tab> を押したときにテーブル名の候補を返す
+-- 接続が決まっていなければ、先にDBを選んでもらう
+local function cmd_table(opts)
+    with_db(function(url)
+        cmd_table_for(url, opts)
+    end)
+end
+
+-- <Tab> を押したときにテーブル名の候補を返す。
+-- ここは同期で答えないといけないので、接続が決まらないときは
+-- DBを聞きにいかず、黙って候補なしにする（:DBSelect で決められる）。
+-- :Table と :ER のテーブル名補完（どちらも第1引数がテーブル名）
 local function cmd_table_complete(arg_lead, cmd_line)
-    -- テーブル名を打ち終えた後（行数や条件の位置）では候補を出さない
-    if cmd_line:match("^%s*Table!?%s+%S+%s") then
+    -- テーブル名を打ち終えた後（行数・条件・ホップ数の位置）では候補を出さない
+    if cmd_line:match("^%s*%a+!?%s+%S+%s") then
         return {}
     end
 
@@ -332,15 +442,397 @@ local function cmd_table_complete(arg_lead, cmd_line)
 end
 
 -- ------------------------------------------------------------
--- テーブル名を絞り込み検索して、中身を表示する
+-- ER図（テーブル同士のつながり）を描く
 -- ------------------------------------------------------------
-local function pick_table()
-    local url = resolve_db()
-    if not url then
-        vim.notify(SETTING_FILE .. " に接続が書かれていません", vim.log.levels.WARN)
+-- 外部キーの定義をDBから取ってきて Mermaid の erDiagram に変換し、
+-- .mmd ファイルとして開く。あとは snacks.nvim の image 機能が
+-- mmdc（mermaid-cli）を呼んでPNGに焼き、Ghostty の画像プロトコルで
+-- そのままバッファに描いてくれる（設定はこのファイルの末尾）。
+--
+-- DB全体を1枚に描くと毛糸玉になって誰にも読めないので
+-- （zinger は 477テーブル・801本の外部キー）、
+--   「起点テーブルから外部キーを N 本たどった範囲」
+-- だけを切り出して描く。
+--
+-- 使い方:
+--   :ER users        … users の周り（1ホップ）を描く
+--   :ER users 2      … 2ホップまで広げる
+--   :ER              … テーブルを絞り込み検索して選ぶ
+--   <leader>de       … 上と同じ
+--   <leader>dt の一覧で <C-e>  … 中身を見ている流れでER図へ
+
+-- 起点テーブルから何ホップ分たどるか（既定値）
+local ER_DEPTH = 1
+
+-- 1枚に描くテーブル数の上限。超えたら描く前に確認する
+local ER_MAX_NODES = 40
+
+-- ------------------------------------------------------------
+-- SQLを流して、結果を「1行1レコード・タブ区切り」で受け取る
+-- ------------------------------------------------------------
+-- run_query が結果をバッファに出すのに対して、こちらは結果を
+-- Lua の値として受け取る。ER図を組み立てるのに中身が要るため。
+--
+-- vim-dadbod が組み立てた接続コマンドに、DBごとの
+-- 「飾りを付けずに出せ」オプションを足して叩く。
+--   MySQL      … -B -N   タブ区切り・ヘッダなし
+--   PostgreSQL … -t -A -F<TAB>   タプルのみ・整列なし
+--   SQLite     … -noheader -separator <TAB>
+-- 罫線やヘッダを付けさせないので、結果をそのまま split できる。
+local function query_rows(url, sql)
+    ensure_dadbod()
+
+    local kind = db_kind(url)
+    local target, extra
+
+    if kind == "mysql" then
+        target, extra = "interactive", { "-B", "-N", "-e", sql }
+    elseif kind == "postgres" then
+        target, extra = "interactive", { "-t", "-A", "-F", "\t", "-c", sql }
+    elseif kind == "sqlite" then
+        target, extra = "command", { "-noheader", "-separator", "\t", sql }
+    else
+        return nil, "ER図は MySQL / PostgreSQL / SQLite にのみ対応しています"
+    end
+
+    local ok, argv = pcall(vim.fn["db#adapter#dispatch"], url, target)
+    if not ok or type(argv) ~= "table" then
+        return nil, tostring(argv)
+    end
+
+    local cmd = vim.list_extend(vim.deepcopy(argv), extra)
+    local lines = vim.fn["db#systemlist"](cmd)
+
+    local rows = {}
+    for _, line in ipairs(lines) do
+        -- mysql は -p でパスワードを渡すと必ず警告を1行吐く
+        if vim.trim(line) ~= "" and not line:match("^mysql: %[Warning%]") then
+            table.insert(rows, vim.split(line, "\t", { plain = true }))
+        end
+    end
+    return rows
+end
+
+-- ------------------------------------------------------------
+-- 外部キーの一覧を出すクエリ
+-- ------------------------------------------------------------
+-- 「子テーブル / 子の列 / 親テーブル / 親の列」の4列を返す。
+local function sql_foreign_keys(url)
+    local kind = db_kind(url)
+
+    if kind == "postgres" then
+        return table.concat({
+            "SELECT tc.table_name, kcu.column_name,",
+            "       ccu.table_name, ccu.column_name",
+            "FROM information_schema.table_constraints tc",
+            "JOIN information_schema.key_column_usage kcu",
+            "  ON kcu.constraint_name = tc.constraint_name",
+            " AND kcu.constraint_schema = tc.constraint_schema",
+            "JOIN information_schema.constraint_column_usage ccu",
+            "  ON ccu.constraint_name = tc.constraint_name",
+            " AND ccu.constraint_schema = tc.constraint_schema",
+            "WHERE tc.constraint_type = 'FOREIGN KEY'",
+            "  AND tc.table_schema = 'public'",
+            "ORDER BY tc.table_name",
+        }, "\n")
+    elseif kind == "sqlite" then
+        -- SQLite には情報スキーマが無い。PRAGMA をテーブル関数として
+        -- 呼べる（3.16以降）ので、それを全テーブルに JOIN する。
+        return table.concat({
+            'SELECT m.name, p."from", p."table", p."to"',
+            "FROM sqlite_master m",
+            "JOIN pragma_foreign_key_list(m.name) p",
+            "WHERE m.type = 'table'",
+            "ORDER BY m.name",
+        }, "\n")
+    end
+
+    return table.concat({
+        "SELECT TABLE_NAME, COLUMN_NAME,",
+        "       REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME",
+        "FROM information_schema.KEY_COLUMN_USAGE",
+        "WHERE TABLE_SCHEMA = DATABASE()",
+        "  AND REFERENCED_TABLE_NAME IS NOT NULL",
+        "ORDER BY TABLE_NAME",
+    }, "\n")
+end
+
+-- ------------------------------------------------------------
+-- 起点テーブルの列定義を出すクエリ
+-- ------------------------------------------------------------
+-- 「列名 / 型 / PK か FK か」の3列を返す。
+local function sql_er_columns(url, name)
+    local kind = db_kind(url)
+    -- スキーマ付き（public.orders）で渡されることがあるので、
+    -- 最後の . から後ろだけをテーブル名として使う
+    local bare = name:match("([^%.]+)$") or name
+
+    if kind == "postgres" then
+        return table.concat({
+            "SELECT c.column_name, c.data_type,",
+            "       CASE WHEN pk.column_name IS NOT NULL THEN 'PK' ELSE '' END",
+            "FROM information_schema.columns c",
+            "LEFT JOIN (",
+            "    SELECT kcu.column_name",
+            "    FROM information_schema.table_constraints tc",
+            "    JOIN information_schema.key_column_usage kcu",
+            "      ON kcu.constraint_name = tc.constraint_name",
+            "    WHERE tc.constraint_type = 'PRIMARY KEY'",
+            "      AND tc.table_name = '" .. bare .. "'",
+            ") pk ON pk.column_name = c.column_name",
+            "WHERE c.table_schema = 'public'",
+            "  AND c.table_name = '" .. bare .. "'",
+            "ORDER BY c.ordinal_position",
+        }, "\n")
+    elseif kind == "sqlite" then
+        return "SELECT name, type, CASE WHEN pk > 0 THEN 'PK' ELSE '' END"
+            .. " FROM pragma_table_info('" .. bare .. "')"
+    end
+
+    return table.concat({
+        "SELECT COLUMN_NAME, DATA_TYPE,",
+        "       CASE COLUMN_KEY WHEN 'PRI' THEN 'PK'",
+        "                       WHEN 'MUL' THEN 'FK' ELSE '' END",
+        "FROM information_schema.COLUMNS",
+        "WHERE TABLE_SCHEMA = DATABASE()",
+        "  AND TABLE_NAME = '" .. bare .. "'",
+        "ORDER BY ORDINAL_POSITION",
+    }, "\n")
+end
+
+-- 外部キーの一覧を接続ごとに覚えておく。
+-- 1枚描くたびに数百行のクエリを投げ直さないため。
+-- 取り直したいときは :ER! を使う。
+local fk_cache = {}
+
+-- ------------------------------------------------------------
+-- 外部キーの一覧をDBから取得する
+-- ------------------------------------------------------------
+local function fetch_foreign_keys(url, force)
+    if not force and fk_cache[url] then
+        return fk_cache[url]
+    end
+
+    local rows, err = query_rows(url, sql_foreign_keys(url))
+    if not rows then
+        return nil, err
+    end
+
+    local fks = {}
+    for _, row in ipairs(rows) do
+        local child, column, parent = row[1], row[2], row[3]
+        if child and parent and child ~= "" and parent ~= "" then
+            table.insert(fks, {
+                child = child,
+                column = column or "",
+                parent = parent,
+            })
+        end
+    end
+
+    fk_cache[url] = fks
+    return fks
+end
+
+-- ------------------------------------------------------------
+-- 起点テーブルから外部キーを N 本たどって、仲間を集める
+-- ------------------------------------------------------------
+-- 外部キーは「子→親」の向きを持つが、たどるときは向きを無視して
+-- 両方向に広げる。orders から order_items（子）にも
+-- customers（親）にも行きたいため。
+local function collect_related(fks, root, depth)
+    local neighbours = {}
+    local function link(from, to)
+        neighbours[from] = neighbours[from] or {}
+        table.insert(neighbours[from], to)
+    end
+    for _, fk in ipairs(fks) do
+        link(fk.child, fk.parent)
+        link(fk.parent, fk.child)
+    end
+
+    local members = { [root] = true }
+    local order = { root }
+    local frontier = { root }
+
+    for _ = 1, depth do
+        local next_frontier = {}
+        for _, name in ipairs(frontier) do
+            for _, neighbour in ipairs(neighbours[name] or {}) do
+                if not members[neighbour] then
+                    members[neighbour] = true
+                    table.insert(order, neighbour)
+                    table.insert(next_frontier, neighbour)
+                end
+            end
+        end
+        frontier = next_frontier
+    end
+
+    return members, order
+end
+
+-- Mermaid が名前として受け付けるのは英数字と _ だけ。
+-- 記号を含むテーブル名は _ に置き換える。
+local function mermaid_name(name)
+    local safe = name:gsub("[^%w_]", "_")
+    return safe
+end
+
+-- ------------------------------------------------------------
+-- Mermaid の erDiagram を組み立てる
+-- ------------------------------------------------------------
+-- 起点テーブルだけ列を並べ、周りはテーブル名とつながりだけ描く。
+-- 全部の列を描くと1ホップでも画面に収まらなくなるため。
+local function render_er(root, columns, fks, members, depth)
+    local lines = {
+        "%% " .. root .. " を起点に外部キーを " .. depth .. " 本たどった範囲",
+        "erDiagram",
+    }
+
+    if columns and #columns > 0 then
+        table.insert(lines, ("    %s {"):format(mermaid_name(root)))
+        for _, col in ipairs(columns) do
+            local name = col[1] or ""
+            local ctype = col[2] or "unknown"
+            local key = col[3] or ""
+            if name ~= "" then
+                -- 型名の varchar(255) や character varying は
+                -- そのままだと Mermaid が構文エラーにするので均す
+                ctype = ctype:gsub("[^%w_]", "_")
+                local col = ("%s %s %s"):format(ctype, mermaid_name(name), key)
+                table.insert(lines, "        " .. vim.trim(col))
+            end
+        end
+        table.insert(lines, "    }")
+    end
+
+    -- 同じテーブルの組を結ぶ外部キーが複数あるとき（複合キーなど）は
+    -- 1本の線にまとめ、列名をカンマでつなげて添える
+    local seen = {}
+    local pairs_order = {}
+    for _, fk in ipairs(fks) do
+        if members[fk.child] and members[fk.parent] then
+            local key = fk.parent .. "\0" .. fk.child
+            if not seen[key] then
+                seen[key] = { parent = fk.parent, child = fk.child, columns = {} }
+                table.insert(pairs_order, key)
+            end
+            table.insert(seen[key].columns, fk.column)
+        end
+    end
+
+    for _, key in ipairs(pairs_order) do
+        local rel = seen[key]
+        table.insert(lines, ('    %s ||--o{ %s : "%s"'):format(
+            mermaid_name(rel.parent),
+            mermaid_name(rel.child),
+            table.concat(rel.columns, ", ")
+        ))
+    end
+
+    return lines
+end
+
+-- ------------------------------------------------------------
+-- 図を書き出す場所を用意する
+-- ------------------------------------------------------------
+-- SQL練習ファイルと同じ <プロジェクトルート>/.sql/ に置く。
+-- 中の .gitignore が配下を丸ごと無視するので、
+-- 業務リポジトリの git status は汚れない。
+local function ensure_er_dir()
+    local dir = project_root() .. "/" .. SQL_DIR
+
+    if vim.fn.isdirectory(dir) == 0 then
+        vim.fn.mkdir(dir, "p")
+    end
+
+    local ignore = dir .. "/.gitignore"
+    if vim.fn.filereadable(ignore) == 0 then
+        vim.fn.writefile({ "*" }, ignore)
+    end
+
+    return dir
+end
+
+-- ------------------------------------------------------------
+-- ER図を描いて開く（接続が決まった状態で呼ばれる本体）
+-- ------------------------------------------------------------
+local function er_diagram_for(url, name, depth, force)
+    depth = depth or ER_DEPTH
+
+    -- mmdc が無いと .mmd を開いても絵にならず、ただの文字列が出る。
+    -- 先に気づけるよう、ここで案内しておく。
+    if vim.fn.executable("mmdc") == 0 then
+        vim.notify(
+            "ER図を絵にするには mermaid-cli が必要です:\n"
+            .. "  npm install -g @mermaid-js/mermaid-cli\n"
+            .. "（画像のサイズ取得に ImageMagick も要ります: brew install imagemagick）",
+            vim.log.levels.WARN
+        )
+    end
+
+    local fks, err = fetch_foreign_keys(url, force)
+    if not fks then
+        vim.notify(
+            ("[%s] 外部キーを取得できませんでした: %s"):format(db_label(url), err or ""),
+            vim.log.levels.ERROR
+        )
         return
     end
 
+    if #fks == 0 then
+        vim.notify(
+            ("[%s] このDBには外部キーが1本もありません。ER図は描けません"):format(db_label(url)),
+            vim.log.levels.WARN
+        )
+        return
+    end
+
+    local members, order = collect_related(fks, name, depth)
+
+    if #order == 1 then
+        vim.notify(
+            ("[%s] %s には外部キーのつながりがありません"):format(db_label(url), name),
+            vim.log.levels.WARN
+        )
+        return
+    end
+
+    -- 広げすぎると mmdc が延々と唸った末に読めない絵を吐くので、
+    -- 描く前に一度止まって訊く
+    if #order > ER_MAX_NODES then
+        local answer = vim.fn.confirm(
+            ("%s を %d ホップ広げると %d テーブルになります。描きますか？")
+                :format(name, depth, #order),
+            "&描く\n&やめる",
+            2
+        )
+        if answer ~= 1 then
+            return
+        end
+    end
+
+    local columns = query_rows(url, sql_er_columns(url, name))
+    local lines = render_er(name, columns, fks, members, depth)
+
+    local file = ("%s/er_%s_%d.mmd"):format(ensure_er_dir(), name:gsub("[^%w_]", "_"), depth)
+    vim.fn.writefile(lines, file)
+
+    -- edit! で開き直す。同じファイルを描き直したとき、
+    -- 古い絵が残ったままにならないようにするため。
+    vim.cmd("edit! " .. vim.fn.fnameescape(file))
+
+    vim.notify(
+        ("[%s] %s の周り %d テーブルを描きました"):format(db_label(url), name, #order),
+        vim.log.levels.INFO
+    )
+end
+
+-- ------------------------------------------------------------
+-- ER図を描くテーブルを絞り込み検索して選ぶ
+-- ------------------------------------------------------------
+local function pick_er_table_for(url)
     local has_telescope, pickers = pcall(require, "telescope.pickers")
     if not has_telescope then
         vim.notify("telescope.nvim が必要です", vim.log.levels.ERROR)
@@ -353,7 +845,85 @@ local function pick_table()
 
     local tables, err = fetch_tables(url)
     if not tables or #tables == 0 then
-        vim.notify("テーブル一覧を取得できませんでした: " .. (err or ""), vim.log.levels.ERROR)
+        vim.notify(
+            ("[%s] テーブル一覧を取得できませんでした: %s"):format(db_label(url), err or ""),
+            vim.log.levels.ERROR
+        )
+        return
+    end
+
+    pickers.new({}, {
+        prompt_title = ("[%s] ER図を描くテーブル  <CR>1ホップ  <C-d>2ホップ")
+            :format(db_label(url)),
+        finder = finders.new_table({ results = tables }),
+        sorter = conf.generic_sorter({}),
+        attach_mappings = function(bufnr, map)
+            local function draw(depth)
+                local entry = action_state.get_selected_entry()
+                local name = entry and entry[1] or nil
+                actions.close(bufnr)
+                if name then
+                    er_diagram_for(url, name, depth)
+                end
+            end
+
+            actions.select_default:replace(function()
+                draw(1)
+            end)
+
+            map({ "i", "n" }, "<C-d>", function()
+                draw(2)
+            end)
+
+            return true
+        end,
+    }):find()
+end
+
+-- 接続が決まっていなければ、先にDBを選んでもらう
+local function pick_er_table()
+    with_db(pick_er_table_for)
+end
+
+-- :ER コマンドの中身
+--   :ER            テーブルを選ぶところから
+--   :ER users      users の周りを1ホップ
+--   :ER users 2    2ホップまで
+--   :ER!           外部キーの一覧を取り直してから描く
+local function cmd_er(opts)
+    local name = opts.fargs[1]
+    local depth = tonumber(opts.fargs[2]) or ER_DEPTH
+
+    with_db(function(url)
+        if not name or name == "" then
+            pick_er_table_for(url)
+        else
+            er_diagram_for(url, name, depth, opts.bang)
+        end
+    end)
+end
+
+
+-- ------------------------------------------------------------
+-- テーブル名を絞り込み検索して、中身を表示する
+-- ------------------------------------------------------------
+local function pick_table_for(url)
+    local has_telescope, pickers = pcall(require, "telescope.pickers")
+    if not has_telescope then
+        vim.notify("telescope.nvim が必要です", vim.log.levels.ERROR)
+        return
+    end
+    local finders = require("telescope.finders")
+    local conf = require("telescope.config").values
+    local actions = require("telescope.actions")
+    local action_state = require("telescope.actions.state")
+
+    local tables, err = fetch_tables(url)
+    if not tables or #tables == 0 then
+        vim.notify(
+            ("[%s] テーブル一覧を取得できませんでした: %s"):format(db_label(url), err or ""),
+            vim.log.levels.ERROR
+        )
         return
     end
 
@@ -362,8 +932,8 @@ local function pick_table()
     end
 
     pickers.new({}, {
-        prompt_title = ("テーブル %d件  <CR>中身  <C-d>列定義  <C-t>件数  <C-y>名前を挿入")
-            :format(#tables),
+        prompt_title = ("[%s] テーブル %d件  <CR>中身  <C-d>列定義  <C-t>件数  <C-e>ER図  <C-y>名前を挿入")
+            :format(db_label(url), #tables),
         finder = finders.new_table({ results = tables }),
         sorter = conf.generic_sorter({}),
         attach_mappings = function(bufnr, map)
@@ -399,6 +969,15 @@ local function pick_table()
                 end
             end)
 
+            -- <C-e> このテーブルを起点にER図を描く
+            map({ "i", "n" }, "<C-e>", function()
+                local name = selected()
+                actions.close(bufnr)
+                if name then
+                    er_diagram_for(url, name)
+                end
+            end)
+
             -- <C-y> テーブル名だけをカーソル位置に挿し込む
             --        （SQLを書いている途中に名前を思い出したいとき）
             map({ "i", "n" }, "<C-y>", function()
@@ -412,6 +991,11 @@ local function pick_table()
             return true
         end,
     }):find()
+end
+
+-- 接続が決まっていなければ、先にDBを選んでもらう
+local function pick_table()
+    with_db(pick_table_for)
 end
 
 return {
@@ -518,6 +1102,14 @@ return {
             { "<leader>db", "<cmd>DBUIToggle<cr>", desc = "DB: サイドバーを開閉" },
             { "<leader>dq", open_project_sql, desc = "DB: このプロジェクトのSQL練習ファイルを開く" },
             { "<leader>dt", pick_table, desc = "DB: テーブルを絞り込み検索して中身を見る" },
+            { "<leader>de", pick_er_table, desc = "DB: テーブルを選んでER図を描く" },
+            {
+                "<leader>dc",
+                function()
+                    choose_db()
+                end,
+                desc = "DB: このバッファが使う接続を選び直す",
+            },
         },
         init = function()
             -- 接続情報を db.setting から読み込む
@@ -601,6 +1193,24 @@ return {
                 desc = "テーブルの中身を表示（:Table <名前> [行数|条件]、! で列定義）",
             })
 
+            -- :ER コマンドを登録する
+            vim.api.nvim_create_user_command("ER", cmd_er, {
+                bang = true,
+                nargs = "*",
+                complete = cmd_table_complete,
+                desc = "ER図を描く（:ER <名前> [ホップ数]、! で外部キーを取り直す）",
+            })
+
+            -- :DBSelect コマンドを登録する。
+            --
+            -- 接続は「バッファが繋いでいるDB → プロジェクト名」の順に
+            -- 自動で決まるが、その推測が意図と違うときはこれで選び直す。
+            vim.api.nvim_create_user_command("DBSelect", function()
+                choose_db()
+            end, {
+                desc = "このバッファが使うDB接続を選び直す",
+            })
+
             -- 小文字の :table でも打てるようにする。
             --
             -- Vim のユーザー定義コマンドは大文字始まりが必須なので
@@ -628,8 +1238,9 @@ return {
                 -- 補完はバッファ変数 b:db を見て「どのDBのスキーマか」を
                 -- 判断している。ただの .sql ファイルを開いただけでは b:db が
                 -- 空なので、候補が1つも出てこない。
-                -- そこでプロジェクトに対応するDBを自動で紐付けておく。
-                -- 別のDBに切り替えたいときは :DBUIFindBuffer を使う。
+                -- そこで resolve_db が決めたDBを自動で紐付けておく。
+                -- 別のDBに切り替えたいときは :DBSelect（<leader>dc）か
+                -- :DBUIFindBuffer を使う。
                 if not vim.b.db or vim.b.db == "" then
                     local url = resolve_db()
                     if url then
@@ -691,5 +1302,35 @@ return {
             -- ft トリガーで読み込まれた「今まさに開いたバッファ」にも適用する
             setup_sql_buffer()
         end,
+    },
+    -- ER図（.mmd）をバッファの中に絵として表示する
+    --
+    -- snacks.nvim は claudecode.nvim の依存として元から入っている。
+    -- その image 機能は、拡張子が formats に載っているファイルを開くと
+    --   ・.mmd → mmdc で PNG に焼く
+    --   ・PNG を Kitty 画像プロトコルで端末に描く
+    -- という段取りを自動でやってくれる（Ghostty はこの規格に対応している）。
+    -- 既定の formats に .mmd は入っていないので、ここで足す。
+    --
+    -- 必要な外部コマンド:
+    --   npm install -g @mermaid-js/mermaid-cli   （mmdc 本体）
+    --   brew install imagemagick                 （画像サイズの取得に使う）
+    -- 入っているかどうかは :checkhealth snacks で確かめられる。
+    {
+        "folke/snacks.nvim",
+        -- image は「ファイルを開いた瞬間」に割り込む必要があるので、
+        -- 遅延読み込みにはできない
+        priority = 1000,
+        lazy = false,
+        opts = {
+            image = {
+                enabled = true,
+                formats = {
+                    "png", "jpg", "jpeg", "gif", "bmp", "webp",
+                    "tiff", "heic", "avif", "pdf",
+                    "mmd", -- Mermaid（ER図はこれで開く）
+                },
+            },
+        },
     },
 }

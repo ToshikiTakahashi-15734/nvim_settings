@@ -4,6 +4,10 @@ local keymap = vim.keymap
 -- リーダーキー（各種操作の起点）をスペースに設定
 vim.g.mapleader = " "
 
+-- ==========================================
+-- 編集（コメント・囲む・行移動）
+-- ==========================================
+
 -- aa でコメントトグル（VSCode の Command + / 相当、プラグインなし）
 local function get_comment_prefix()
   local cs = vim.bo.commentstring
@@ -177,6 +181,10 @@ keymap.set("i", "<A-Up>", function()
   vim.cmd("startinsert")
 end, { desc = "Move line up (insert mode)" })
 
+-- ==========================================
+-- 移動・検索
+-- ==========================================
+
 -- jk でインサートモードを抜ける
 keymap.set("i", "jk", "<Esc>", { desc = "Exit insert mode" })
 
@@ -239,6 +247,10 @@ keymap.set("n", "<CR>", function()
   end
 end, { noremap = true, desc = "Enter twice to search" })
 
+-- ==========================================
+-- 画面分割・タブ
+-- ==========================================
+
 -- 画面分割
 keymap.set("n", "<leader>sv", "<C-w>v", { desc = "Split window vertically" })
 keymap.set("n", "<leader>sh", "<C-w>s", { desc = "Split window horizontally" })
@@ -252,6 +264,10 @@ keymap.set("n", "tx", function()
         vim.cmd('tabclose')
     end
 end, { desc = "タブを閉じる" }) -- tab closie
+
+-- ==========================================
+-- その他の便利キー（ツリー・全選択・Undo・ジャンプ）
+-- ==========================================
 
 -- nvim-tree
 -- スペース + e でツリーを開閉する (e は Explorer の e)
@@ -342,6 +358,10 @@ keymap.set("n", "<leader>hB", function() require("gitsigns").toggle_current_line
 -- gitsigns: 削除行の表示
 keymap.set("n", "<leader>hl", function() require("gitsigns").toggle_deleted() end, { desc = "削除行の表示切替" })
 
+-- ==========================================
+-- プロジェクト・ファイル検索
+-- ==========================================
+
 -- スペース + p (Project) でプロジェクト一覧を表示
 -- 選択するとそのディレクトリに移動(cd)してファイル検索が開きます
 keymap.set('n', '<leader>p', function()
@@ -413,6 +433,10 @@ end
 
 keymap.set('n', '<leader>sz', live_grep_with_extension, { desc = "拡張子を指定して全文検索" })
 
+-- ==========================================
+-- WezTerm 互換（タブ・ペイン）
+-- ==========================================
+
 -- ALT + n: 次のタブへ移動（WezTermのウィンドウ切り替えに対応）
 keymap.set("n", "<A-n>", ":tabnext<CR>", { desc = "次のタブへ（WezTerm互換）" })
 
@@ -430,6 +454,10 @@ keymap.set("n", "<A-D-Down>", "<C-w>j", { desc = "下のペインへ移動（Wez
 
 -- ALT + x: 現在のペインを閉じる
 keymap.set("n", "<A-x>", "<C-w>c", { desc = "ペインを閉じる（WezTerm互換）" })
+
+-- ==========================================
+-- コード整形・診断
+-- ==========================================
 
 -- T (Shift+t): フローティングターミナルの開閉は toggleterm.nvim で管理
 -- （設定は lua/plugins/toggleterm.lua）
@@ -482,3 +510,36 @@ end, { desc = "React: ルートを選んでツリー表示" })
 keymap.set("n", "<leader>rd", function()
   require("react-tree").debug()
 end, { desc = "React: ツリーデバッグ" })
+
+-- ==========================================
+-- GitHub PR
+-- ==========================================
+
+-- :GR  スペース + Gp: レビュー待ちPRの常駐パネルを画面下部に開閉
+--   開いている間は30秒ごとに自動更新される
+--   パネル内: [Enter]ブラウザで開く [r]更新 [q]閉じる
+keymap.set("n", "<leader>Gp", function()
+  require("github-pr").toggle_panel()
+end, { desc = "GitHub: レビュー待ちPRパネルを開閉" })
+
+-- スペース + Gr: 同じものを Telescope で絞り込み検索したいとき
+keymap.set("n", "<leader>Gr", function()
+  require("github-pr").review_requested()
+end, { desc = "GitHub: レビュー待ちPRを検索（Telescope）" })
+
+-- :GR / :GhReviewPRs コマンドを登録
+require("github-pr").setup()
+
+-- ==========================================
+-- コマンド集（チートシート）
+-- ==========================================
+
+-- スペース + H: 備忘録(.keys)・キーマップ・ユーザーコマンド・スニペットを一覧表示
+--   キーマップ/コマンドは定義した場所（この下の見出しやプラグインファイル）ごとに自動で分類される
+--   ウィンドウ内: [Tab/1-4]タブ切替 [/]横断検索 [Enter]実行 [e]備忘録を編集 [q]閉じる
+keymap.set("n", "<leader>H", function()
+  require("cheatsheet").open()
+end, { desc = "コマンド集を表示" })
+
+-- :Cheatsheet コマンドを登録（:Cheatsheet search で直接検索）
+require("cheatsheet").setup()
