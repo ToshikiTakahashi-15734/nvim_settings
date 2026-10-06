@@ -8,6 +8,12 @@
 --
 -- パネル内のキー:
 --   Enter … Webで開く / u … URLをコピー / r … 再取得 / p … プロジェクト切替 / q … 閉じる
+--   f … 表示中の一覧を絞り込み（タイトル・番号・担当者など。空で解除）
+--   t … 取得済みのタスクを Telescope であいまい検索
+--   w … カーソル行のタスクで Ghostty の新しいウィンドウを開き、claude を起動
+--   o … 子タスク（sub-issue）をツリーで開く / 閉じる（子の行でも押せば孫を開ける）
+--        （~/develop/<リポジトリ名> で起動し、リンクと作業指示を渡す）
+--   s … GitHub に条件を投げて検索（Projects のフィルタ構文。例: label:bug。空で解除）
 --
 -- 設定は ~/.config/nvim/task.setting.json に書く（:Task のたびに読み直すので再起動不要）:
 --   owner           … プロジェクトの持ち主（組織名 or ユーザー名）
@@ -53,13 +59,40 @@ query($owner: String!, $number: Int!, $q: String!, $cursor: String) {
               __typename
               ... on Issue {
                 number title url state
-                repository { name }
+                repository { name owner { login } }
                 assignees(first: 10) { nodes { login } }
+                subIssuesSummary { total completed }
               }
               ... on PullRequest {
                 number title url state
-                repository { name }
+                repository { name owner { login } }
                 assignees(first: 10) { nodes { login } }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+]]
+
+-- 子タスク（sub-issue）を取る。Status はプロジェクトごとに違うので projectItems から拾う
+local SUB_ISSUES_QUERY = [[
+query($owner: String!, $repo: String!, $number: Int!) {
+  repository(owner: $owner, name: $repo) {
+    issue(number: $number) {
+      subIssues(first: 100) {
+        nodes {
+          number title url state
+          repository { name owner { login } }
+          assignees(first: 10) { nodes { login } }
+          subIssuesSummary { total completed }
+          projectItems(first: 10) {
+            nodes {
+              project { number }
+              status: fieldValueByName(name: "Status") {
+                ... on ProjectV2ItemFieldSingleSelectValue { name }
               }
             }
           }
@@ -73,6 +106,8 @@ query($owner: String!, $number: Int!, $q: String!, $cursor: String) {
 -- cache["owner#番号"] = { title, sections = { { label, items } }, fetched_at }
 local cache = {}
 local inflight = {}
+-- 子タスクの取得結果。sub_cache[親のURL] = { loading = true } | { items = {...} } | { error = "…" }
+local sub_cache = {}
 
 local ns = vim.api.nvim_create_namespace("github_task_panel")
 
@@ -107,6 +142,27 @@ end
 -- ==========================================
 -- 取得（非同期）
 -- ==========================================
+
+-- GraphQL の Issue / PullRequest を表示用のアイテムに変換する
+local function to_item(c, status)
+  local assignees = {}
+  for _, a in ipairs(vim.tbl_get(c, "assignees", "nodes") or {}) do
+    table.insert(assignees, a.login)
+  end
+  return {
+    kind = c.__typename or "Issue",
+    number = c.number,
+    title = c.title,
+    url = c.url,
+    state = c.state,
+    repo = vim.tbl_get(c, "repository", "name"),
+    repo_owner = vim.tbl_get(c, "repository", "owner", "login"),
+    assignees = assignees,
+    status = status,
+    sub_total = vim.tbl_get(c, "subIssuesSummary", "total") or 0,
+    sub_done = vim.tbl_get(c, "subIssuesSummary", "completed") or 0,
+  }
+end
 
 -- 1セクション分をページングしながら全部取る。on_done(items, title, err)
 local function fetch_section(owner, number, query, on_done)
@@ -149,21 +205,8 @@ local function fetch_section(owner, number, query, on_done)
           local c = node.content
           -- DraftIssue（URLが無い）や権限の無いアイテムは除く
           if type(c) == "table" and c.url then
-            local assignees = {}
-            for _, a in ipairs(vim.tbl_get(c, "assignees", "nodes") or {}) do
-              table.insert(assignees, a.login)
-            end
             local status = node.status
-            table.insert(items, {
-              kind = c.__typename,
-              number = c.number,
-              title = c.title,
-              url = c.url,
-              state = c.state,
-              repo = vim.tbl_get(c, "repository", "name"),
-              assignees = assignees,
-              status = (type(status) == "table" and status.name) or nil,
-            })
+            table.insert(items, to_item(c, (type(status) == "table" and status.name) or nil))
           end
         end
 
@@ -180,15 +223,14 @@ local function fetch_section(owner, number, query, on_done)
   step(nil)
 end
 
--- 全セクションを並行に取り、揃ったら cache を更新して on_done(err)
-local function fetch(setting, number, on_done)
-  local key = cache_key(setting.owner, number)
+-- sections を並行に取り、揃ったら cache を更新して on_done(err)
+local function fetch(owner, number, sections, on_done)
+  local key = cache_key(owner, number)
   if inflight[key] then
     return
   end
   inflight[key] = true
 
-  local sections = setting.sections or {}
   local results = {}
   local title = nil
   local first_err = nil
@@ -201,7 +243,7 @@ local function fetch(setting, number, on_done)
   end
 
   for i, sec in ipairs(sections) do
-    fetch_section(setting.owner, number, sec.query or "", function(items, t, err)
+    fetch_section(owner, number, sec.query or "", function(items, t, err)
       if err then
         first_err = first_err or err
       else
@@ -277,6 +319,31 @@ local function format_item(item, badge_width)
   return display, hls
 end
 
+-- 絞り込み・Telescope の検索対象にする文字列（番号・タイトル・担当者・リポジトリ・ステータス）
+local function search_text(item)
+  return table.concat({
+    "#" .. tostring(item.number),
+    item.title or "",
+    table.concat(item.assignees, " "),
+    item.repo or "",
+    item.status or "",
+  }, " ")
+end
+
+-- 絞り込み文字列に一致するか（空白区切りの全語を含むものだけ残す。大文字小文字は区別しない）
+local function match_filter(item, filter)
+  if not filter or filter == "" then
+    return true
+  end
+  local text = search_text(item):lower()
+  for word in filter:lower():gmatch("%S+") do
+    if not text:find(word, 1, true) then
+      return false
+    end
+  end
+  return true
+end
+
 -- ==========================================
 -- パネル（画面下部の水平分割）
 -- ==========================================
@@ -287,6 +354,12 @@ local panel = {
   setting = nil,
   number = nil,
   error = nil,
+  -- f で入力した絞り込み文字列（表示中の一覧だけを絞る）
+  filter = nil,
+  -- s で入力した GitHub への検索条件（「検索結果」セクションとして取得する）
+  search = nil,
+  -- o で開いている親タスク。expanded[URL] = true
+  expanded = {},
   -- パネル内の行番号(1始まり) -> アイテム
   line_map = {},
 }
@@ -315,10 +388,15 @@ local function panel_render()
   else
     header = " Task — " .. name
   end
-  local hint = "   [Enter]Webで開く [u]URLコピー [r]再取得 [p]プロジェクト切替 [q]閉じる"
+  local hint = "   [Enter]Webで開く [o]子タスク開閉 [u]URLコピー [f]絞り込み [t]Telescope [w]claude起動 [s]GitHub検索 [r]再取得 [p]プロジェクト切替 [q]閉じる"
   table.insert(lines, header .. hint)
   table.insert(hls, { 0, 0, #header, "Title" })
   table.insert(hls, { 0, #header, -1, "Comment" })
+
+  if panel.filter then
+    table.insert(lines, " 絞り込み中: " .. panel.filter .. "   （f で空にすると解除）")
+    table.insert(hls, { #lines - 1, 0, -1, "DiagnosticWarn" })
+  end
 
   if panel.error then
     table.insert(lines, " 取得に失敗しました: " .. panel.error)
@@ -328,30 +406,82 @@ local function panel_render()
   if cached then
     local width = panel_is_open() and vim.api.nvim_win_get_width(panel.win) or 60
 
-    -- バッジの幅を全アイテムで揃える
+    -- 開いている子タスクも含めて、表示する行を先に並べる
+    --   row = { item = …, tree = "├ " などの罫線 } / { note = "取得中…", tree = … }
+    local function collect(items, cont, rows)
+      for i, item in ipairs(items) do
+        local last = (i == #items)
+        local tree = cont == nil and "" or (cont .. (last and "└ " or "├ "))
+        table.insert(rows, { item = item, tree = tree })
+        if panel.expanded[item.url] then
+          -- 子の罫線は親の ▸ の1つ右の列に出す（親の兄弟が続くなら │ で線をつなぐ）
+          local child_cont = cont == nil and "  " or (cont .. (last and "  " or "│ ") .. "  ")
+          local sub = sub_cache[item.url]
+          if not sub or sub.loading then
+            table.insert(rows, { note = "取得中でございます…", tree = child_cont .. "└ " })
+          elseif sub.error then
+            table.insert(rows, { note = "取得に失敗しました: " .. sub.error, tree = child_cont .. "└ ", hl = "DiagnosticError" })
+          else
+            collect(sub.items, child_cont, rows)
+          end
+        end
+      end
+      return rows
+    end
+
+    local section_rows = {}
+    -- バッジの幅を全行で揃える
     local badge_width = 6
-    for _, sec in ipairs(cached.sections) do
-      for _, item in ipairs(sec.items) do
-        badge_width = math.max(badge_width, vim.fn.strdisplaywidth((badge(item))))
+    for i, sec in ipairs(cached.sections) do
+      local items = vim.tbl_filter(function(item)
+        return match_filter(item, panel.filter)
+      end, sec.items)
+      section_rows[i] = { items = items, rows = collect(items, nil, {}) }
+      for _, row in ipairs(section_rows[i].rows) do
+        if row.item then
+          badge_width = math.max(badge_width, vim.fn.strdisplaywidth((badge(row.item))))
+        end
       end
     end
 
-    for _, sec in ipairs(cached.sections) do
-      local label = string.format(" ── %s (%d)  %s ", sec.label, #sec.items, sec.query or "")
+    for i, sec in ipairs(cached.sections) do
+      local items = section_rows[i].items
+      local count = panel.filter and string.format("%d/%d", #items, #sec.items) or tostring(#sec.items)
+      local label = string.format(" ── %s (%s)  %s ", sec.label, count, sec.query or "")
       local rest = width - vim.fn.strdisplaywidth(label) - 1
       table.insert(lines, label .. (rest > 0 and string.rep("─", rest) or ""))
       table.insert(hls, { #lines - 1, 0, -1, "Title" })
 
-      if #sec.items == 0 then
+      if #items == 0 then
         table.insert(lines, "   ありませんです")
         table.insert(hls, { #lines - 1, 0, -1, "Comment" })
       else
-        for _, item in ipairs(sec.items) do
-          local display, item_hls = format_item(item, badge_width)
-          table.insert(lines, "  " .. display)
-          panel.line_map[#lines] = item
-          for _, h in ipairs(item_hls) do
-            table.insert(hls, { #lines - 1, h[1] + 2, h[2] + 2, h[3] })
+        for _, row in ipairs(section_rows[i].rows) do
+          if row.note then
+            local head = "  " .. row.tree
+            table.insert(lines, head .. row.note)
+            table.insert(hls, { #lines - 1, 0, #head, "Comment" })
+            table.insert(hls, { #lines - 1, #head, -1, row.hl or "Comment" })
+          else
+            local item = row.item
+            -- 子タスクがあるものは ▸（閉）/ ▾（開）を付け、末尾に「子 完了/全体」を出す
+            local mark = "  "
+            if item.sub_total > 0 then
+              mark = panel.expanded[item.url] and "▾ " or "▸ "
+            end
+            local head = "  " .. row.tree .. mark
+            local display, item_hls = format_item(item, badge_width)
+            local sub = item.sub_total > 0 and string.format("  子 %d/%d", item.sub_done, item.sub_total) or ""
+            table.insert(lines, head .. display .. sub)
+            panel.line_map[#lines] = item
+            table.insert(hls, { #lines - 1, 0, #head, "Comment" })
+            for _, h in ipairs(item_hls) do
+              table.insert(hls, { #lines - 1, h[1] + #head, h[2] + #head, h[3] })
+            end
+            if sub ~= "" then
+              local sub_hl = item.sub_done == item.sub_total and "DiagnosticOk" or "DiagnosticWarn"
+              table.insert(hls, { #lines - 1, #head + #display, -1, sub_hl })
+            end
           end
         end
       end
@@ -385,12 +515,83 @@ local function panel_render()
   end
 end
 
+local function fetch_sub_issues(item)
+  sub_cache[item.url] = { loading = true }
+  vim.system({
+    "gh", "api", "graphql",
+    "-f", "query=" .. SUB_ISSUES_QUERY,
+    "-f", "owner=" .. (item.repo_owner or panel.setting.owner),
+    "-f", "repo=" .. (item.repo or ""),
+    "-F", "number=" .. tostring(item.number),
+  }, { text = true }, function(obj)
+    vim.schedule(function()
+      if obj.code ~= 0 then
+        sub_cache[item.url] = { error = (obj.stderr or ""):gsub("%s+$", "") }
+      else
+        local ok, decoded = pcall(vim.json.decode, obj.stdout)
+        local nodes = ok and type(decoded) == "table"
+          and vim.tbl_get(decoded, "data", "repository", "issue", "subIssues", "nodes")
+        if type(nodes) ~= "table" then
+          sub_cache[item.url] = { error = "gh の出力を解釈できませんでした" }
+        else
+          local items = {}
+          for _, c in ipairs(nodes) do
+            -- 表示中のプロジェクトでの Status を使う（そのプロジェクトに無い子は「-」）
+            local status = nil
+            for _, pi in ipairs(vim.tbl_get(c, "projectItems", "nodes") or {}) do
+              if vim.tbl_get(pi, "project", "number") == panel.number and type(pi.status) == "table" then
+                status = pi.status.name
+              end
+            end
+            table.insert(items, to_item(c, status))
+          end
+          sub_cache[item.url] = { items = items }
+        end
+      end
+      if panel_is_open() then
+        panel_render()
+      end
+    end)
+  end)
+end
+
+-- 開いている親タスクの子を取り直す
+local function refetch_expanded()
+  for url in pairs(sub_cache) do
+    if not panel.expanded[url] then
+      sub_cache[url] = nil
+    end
+  end
+  local function walk(items)
+    for _, item in ipairs(items or {}) do
+      if panel.expanded[item.url] then
+        local sub = sub_cache[item.url]
+        if not (sub and sub.loading) then
+          fetch_sub_issues(item)
+        end
+      end
+    end
+  end
+  local cached = cache[cache_key(panel.setting.owner, panel.number)]
+  for _, sec in ipairs(cached and cached.sections or {}) do
+    walk(sec.items)
+  end
+  for _, sub in pairs(vim.deepcopy(sub_cache)) do
+    walk(sub.items)
+  end
+end
+
 local function panel_fetch()
   panel.error = nil
   panel.inflight_label = true
   panel_render()
   local number = panel.number
-  fetch(panel.setting, number, function(err)
+  -- GitHub 検索中は「検索結果」セクションを先頭に足して一緒に取る
+  local sections = vim.list_extend({}, panel.setting.sections or {})
+  if panel.search then
+    table.insert(sections, 1, { label = "検索結果", query = panel.search })
+  end
+  fetch(panel.setting.owner, number, sections, function(err)
     -- 取得中にプロジェクトを切り替えていたら、古い結果では描き直さない
     if number ~= panel.number then
       return
@@ -399,6 +600,9 @@ local function panel_fetch()
     panel.error = err
     if panel_is_open() then
       panel_render()
+      if not err then
+        refetch_expanded()
+      end
     end
   end)
 end
@@ -410,6 +614,8 @@ end
 -- 表示中のプロジェクトを切り替える
 local function panel_switch(number)
   panel.number = number
+  panel.expanded = {}
+  sub_cache = {}
   panel.error = nil
   panel_render()
   panel_fetch()
@@ -452,6 +658,138 @@ local function pick_project()
   end)
 end
 
+-- f: 表示中の一覧を絞り込む（空で解除）
+local function prompt_filter()
+  vim.ui.input({ prompt = "絞り込み: ", default = panel.filter or "" }, function(input)
+    if input == nil then
+      return
+    end
+    panel.filter = (input ~= "" and input) or nil
+    panel_render()
+  end)
+end
+
+-- s: GitHub に条件を投げて検索する（空で解除）
+local function prompt_search()
+  vim.ui.input({ prompt = "GitHub検索（例: label:bug is:open）: ", default = panel.search or "" }, function(input)
+    if input == nil then
+      return
+    end
+    panel.search = (input ~= "" and input) or nil
+    panel_fetch()
+  end)
+end
+
+-- o: 子タスクをツリーで開く / 閉じる
+local function toggle_children()
+  local item = current_item()
+  if not item then
+    return
+  end
+  if item.sub_total == 0 then
+    notify("#" .. item.number .. " には子タスクがありませんです")
+    return
+  end
+  if panel.expanded[item.url] then
+    panel.expanded[item.url] = nil
+  else
+    panel.expanded[item.url] = true
+    local sub = sub_cache[item.url]
+    if not sub or sub.error then
+      fetch_sub_issues(item)
+    end
+  end
+  panel_render()
+end
+
+-- t: 取得済みのタスクを Telescope であいまい検索する（Enter で Web を開く）
+local function telescope_search()
+  local cached = cache[cache_key(panel.setting.owner, panel.number)]
+  if not cached then
+    notify("まだ取得できておりませんです。少しお待ちくださいです", vim.log.levels.WARN)
+    return
+  end
+
+  local pickers = require("telescope.pickers")
+  local finders = require("telescope.finders")
+  local conf = require("telescope.config").values
+  local actions = require("telescope.actions")
+  local action_state = require("telescope.actions.state")
+
+  -- 複数セクションに出るアイテムは1回だけ並べる
+  local entries, seen = {}, {}
+  for _, sec in ipairs(cached.sections) do
+    for _, item in ipairs(sec.items) do
+      if not seen[item.url] then
+        seen[item.url] = true
+        table.insert(entries, { item = item, section = sec.label })
+      end
+    end
+  end
+
+  pickers.new({}, {
+    prompt_title = "Task — " .. (cached.title or ""),
+    finder = finders.new_table({
+      results = entries,
+      entry_maker = function(e)
+        local display = format_item(e.item, 12)
+        return {
+          value = e.item,
+          display = "[" .. e.section .. "] " .. display,
+          ordinal = e.section .. " " .. search_text(e.item),
+        }
+      end,
+    }),
+    sorter = conf.generic_sorter({}),
+    attach_mappings = function(prompt_bufnr)
+      actions.select_default:replace(function()
+        local entry = action_state.get_selected_entry()
+        actions.close(prompt_bufnr)
+        if entry then
+          vim.ui.open(entry.value.url)
+        end
+      end)
+      return true
+    end,
+  }):find()
+end
+
+-- w: カーソル行のタスクで Ghostty の新しいウィンドウを開き、claude を起動する
+local function start_claude()
+  local item = current_item()
+  if not item then
+    return
+  end
+  -- リポジトリは ~/develop/<リポジトリ名> にある前提。無ければ今のディレクトリで起動する
+  local dir = vim.fn.expand("~/develop/") .. (item.repo or "")
+  if not item.repo or vim.fn.isdirectory(dir) == 0 then
+    dir = vim.fn.getcwd()
+  end
+  local prompt = item.url .. "\nワークフロー開始\n並行して作業しているので干渉しないようにして"
+  -- いつものシェルに打ち込む形で起動する（$'…' で改行入りの指示を1行で渡す）
+  local input = "claude $'" .. prompt:gsub("\\", "\\\\"):gsub("'", "\\'"):gsub("\n", "\\n") .. "'\n"
+
+  vim.system({
+    "osascript",
+    "-e", "on run argv",
+    "-e", 'tell application "Ghostty"',
+    "-e", "set cfg to new surface configuration",
+    "-e", "set initial working directory of cfg to item 1 of argv",
+    "-e", "set initial input of cfg to item 2 of argv",
+    "-e", "new window with configuration cfg",
+    "-e", "activate",
+    "-e", "end tell",
+    "-e", "end run",
+    dir, input,
+  }, { text = true }, function(obj)
+    if obj.code ~= 0 then
+      vim.schedule(function()
+        notify("Ghostty を開けませんでした: " .. (obj.stderr or ""), vim.log.levels.ERROR)
+      end)
+    end
+  end)
+end
+
 local function panel_close()
   if panel_is_open() then
     -- bufhidden=wipe なのでバッファも一緒に消える
@@ -490,6 +828,8 @@ local function panel_open()
     end
   end, { buffer = buf, nowait = true, desc = "Task: Webで開く" })
 
+  vim.keymap.set("n", "o", toggle_children, { buffer = buf, nowait = true, desc = "Task: 子タスクを開閉" })
+
   vim.keymap.set("n", "u", function()
     local item = current_item()
     if item then
@@ -501,6 +841,10 @@ local function panel_open()
 
   vim.keymap.set("n", "r", panel_fetch, { buffer = buf, nowait = true, desc = "Task: 再取得" })
   vim.keymap.set("n", "p", pick_project, { buffer = buf, nowait = true, desc = "Task: プロジェクト切替" })
+  vim.keymap.set("n", "f", prompt_filter, { buffer = buf, nowait = true, desc = "Task: 一覧を絞り込み" })
+  vim.keymap.set("n", "t", telescope_search, { buffer = buf, nowait = true, desc = "Task: Telescopeで検索" })
+  vim.keymap.set("n", "w", start_claude, { buffer = buf, nowait = true, desc = "Task: 新しいターミナルでclaudeを起動" })
+  vim.keymap.set("n", "s", prompt_search, { buffer = buf, nowait = true, desc = "Task: GitHubに条件を投げて検索" })
   vim.keymap.set("n", "q", panel_close, { buffer = buf, nowait = true, desc = "Task: 閉じる" })
 
   vim.api.nvim_create_autocmd("BufWipeout", {

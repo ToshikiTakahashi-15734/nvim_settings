@@ -161,7 +161,12 @@ alias keys='echo "
   :task       : タスク一覧パネルを開く（設定は task.setting.json）
 # タスクパネルの中
   Enter       : Webで開く
+  o           : 子タスクをツリーで開閉（子の行で押すと孫も開く）
   u           : URLをコピー
+  f           : 一覧を絞り込み（空で解除）
+  t           : Telescopeであいまい検索
+  w           : Ghosttyの新しいウィンドウでclaudeを起動（リンクと作業指示を渡す）
+  s           : GitHubに条件を投げて検索（例 label:bug。空で解除）
   r           : 再取得
   p           : プロジェクト切替
   q           : 閉じる
