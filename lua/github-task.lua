@@ -9,7 +9,7 @@
 -- パネル内のキー:
 --   Enter … Webで開く / u … URLをコピー / r … 再取得 / p … プロジェクト切替 / q … 閉じる
 --   f … 表示中の一覧を絞り込み（タイトル・番号・担当者など。空で解除）
---   t … 取得済みのタスクを Telescope であいまい検索
+--   t … 取得済みのタスクを Telescope であいまい検索（Enter でパネルのその行へカーソルを移す）
 --   w … カーソル行のタスクで Ghostty の新しいウィンドウを開き、claude を起動
 --   o … 子タスク（sub-issue）をツリーで開く / 閉じる（子の行でも押せば孫を開ける）
 --        （~/develop/<リポジトリ名> で起動し、リンクと作業指示を渡す）
@@ -702,7 +702,31 @@ local function toggle_children()
   panel_render()
 end
 
--- t: 取得済みのタスクを Telescope であいまい検索する（Enter で Web を開く）
+-- パネル内で url の行へカーソルを移す。絞り込みで隠れていたら絞り込みを解除して探し直す
+local function jump_to(url)
+  if not panel_is_open() then
+    return
+  end
+  local function find()
+    for lnum, item in pairs(panel.line_map) do
+      if item.url == url then
+        return lnum
+      end
+    end
+  end
+  local lnum = find()
+  if not lnum and panel.filter then
+    panel.filter = nil
+    panel_render()
+    lnum = find()
+  end
+  vim.api.nvim_set_current_win(panel.win)
+  if lnum then
+    vim.api.nvim_win_set_cursor(panel.win, { lnum, 0 })
+  end
+end
+
+-- t: 取得済みのタスクを Telescope であいまい検索する（Enter でパネルのその行へカーソルを移す）
 local function telescope_search()
   local cached = cache[cache_key(panel.setting.owner, panel.number)]
   if not cached then
@@ -746,7 +770,7 @@ local function telescope_search()
         local entry = action_state.get_selected_entry()
         actions.close(prompt_bufnr)
         if entry then
-          vim.ui.open(entry.value.url)
+          jump_to(entry.value.url)
         end
       end)
       return true
