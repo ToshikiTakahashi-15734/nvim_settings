@@ -530,6 +530,9 @@ end, { desc = "GitHub: レビュー待ちPRを検索（Telescope）" })
 -- :GR / :GhReviewPRs コマンドを登録
 require("github-pr").setup()
 
+-- :task  GitHub Projects のタスク一覧パネルを開く（lua/github-task.lua）
+require("github-task").setup()
+
 -- ==========================================
 -- コマンド集（チートシート）
 -- ==========================================

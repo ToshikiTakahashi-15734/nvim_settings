@@ -1,0 +1,8 @@
+{
+  "owner": "eustylelab",
+  "default_project": 15,
+  "sections": [
+    { "label": "今スプリントの自分のタスク", "query": "assignee:@me sprint:@current" },
+    { "label": "親issueなし（open）", "query": "no:parent-issue is:open" }
+  ]
+}

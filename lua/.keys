@@ -157,6 +157,15 @@ alias keys='echo "
   r           : 手動更新
   q           : 閉じる
 
+■ GitHub タスク (Projects)
+  :task       : タスク一覧パネルを開く（設定は task.setting.json）
+# タスクパネルの中
+  Enter       : Webで開く
+  u           : URLをコピー
+  r           : 再取得
+  p           : プロジェクト切替
+  q           : 閉じる
+
 ■ React コンポーネントツリー
   <leader>rt  : 現在ファイルのコンポーネントツリーを表示
   <leader>rp  : ルートコンポーネントを選んでツリー表示
