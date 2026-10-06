@@ -6,6 +6,7 @@
 --
 --   1. 常駐パネル    :GR / <leader>Gp
 --        画面下部に水平分割で出しっぱなしにする。開いている間は自動で最新化される。
+--        行で R を押すと差分とAIレビューの画面を開く（lua/github-pr-review.lua）
 --   2. Telescope版   <leader>Gr / :GhReviewPRs
 --        絞り込み検索したいときに使う。選んだら閉じる。
 --
@@ -308,7 +309,7 @@ local function panel_render()
       os.date("%H:%M:%S", cached.fetched_at)
     )
   end
-  local hint = "   [Enter]ブラウザで開く  [r]更新  [q]閉じる"
+  local hint = "   [Enter]ブラウザで開く  [R]レビュー  [r]更新  [q]閉じる"
   table.insert(lines, header .. hint)
   table.insert(hls, { 0, 0, #header, "Title" })
   table.insert(hls, { 0, #header, -1, "Comment" })
@@ -467,6 +468,14 @@ local function panel_open()
       open_in_browser(panel.root, pr)
     end
   end, { buffer = buf, nowait = true, desc = "GitHub PR: ブラウザで開く" })
+
+  vim.keymap.set("n", "R", function()
+    local lnum = vim.api.nvim_win_get_cursor(0)[1]
+    local pr = panel.line_map[lnum]
+    if pr then
+      require("github-pr-review").open(panel.root, pr)
+    end
+  end, { buffer = buf, nowait = true, desc = "GitHub PR: 差分とAIレビューを開く" })
 
   vim.keymap.set("n", "r", function()
     panel_fetch(false)

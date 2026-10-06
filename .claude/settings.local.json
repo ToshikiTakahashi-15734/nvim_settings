@@ -3,7 +3,8 @@
     "allow": [
       "Bash(nvim:*)",
       "Bash(tree-sitter:*)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(plutil -p /Applications/cmux.app/Contents/Resources/en.lproj/Localizable.strings)"
     ]
   }
 }

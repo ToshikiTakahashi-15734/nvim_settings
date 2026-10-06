@@ -517,7 +517,7 @@ end, { desc = "React: ツリーデバッグ" })
 
 -- :GR  スペース + Gp: レビュー待ちPRの常駐パネルを画面下部に開閉
 --   開いている間は30秒ごとに自動更新される
---   パネル内: [Enter]ブラウザで開く [r]更新 [q]閉じる
+--   パネル内: [Enter]ブラウザで開く [R]差分とAIレビュー [r]更新 [q]閉じる
 keymap.set("n", "<leader>Gp", function()
   require("github-pr").toggle_panel()
 end, { desc = "GitHub: レビュー待ちPRパネルを開閉" })

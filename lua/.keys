@@ -154,8 +154,21 @@ alias keys='echo "
   <leader>Gr / :GhReviewPRs : 同じ一覧をTelescopeで絞り込み検索
 # パネルの中
   Enter       : ブラウザで開く
+  R           : 差分とAIレビューの画面を開く
   r           : 手動更新
   q           : 閉じる
+# レビュー画面の差分の中（diffview）
+  c           : この行にコメント（GitHubに投稿。変更箇所の近くの行のみ）
+  C           : PR全体にコメント（GitHubに投稿）
+  Tab / S-Tab : 次 / 前のファイルへ（diffview標準）
+  q           : レビュー画面を閉じる
+# レビュー画面の手引きの中
+  Enter       : そのファイルの差分へ移動
+  x           : 観点のチェックを切替
+  q           : レビュー画面を閉じる
+# コメント入力の中
+  Ctrl-s      : GitHubに投稿
+  q / Esc     : 取り消し
 
 ■ GitHub タスク (Projects)
   :task       : タスク一覧パネルを開く（設定は task.setting.json）
