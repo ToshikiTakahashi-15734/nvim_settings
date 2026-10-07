@@ -62,6 +62,7 @@ query($owner: String!, $number: Int!, $q: String!, $cursor: String) {
                 repository { name owner { login } }
                 assignees(first: 10) { nodes { login } }
                 subIssuesSummary { total completed }
+                parent { url }
               }
               ... on PullRequest {
                 number title url state
@@ -161,6 +162,7 @@ local function to_item(c, status)
     status = status,
     sub_total = vim.tbl_get(c, "subIssuesSummary", "total") or 0,
     sub_done = vim.tbl_get(c, "subIssuesSummary", "completed") or 0,
+    parent_url = vim.tbl_get(c, "parent", "url"),
   }
 end
 
@@ -436,7 +438,15 @@ local function panel_render()
       local items = vim.tbl_filter(function(item)
         return match_filter(item, panel.filter)
       end, sec.items)
-      section_rows[i] = { items = items, rows = collect(items, nil, {}) }
+      -- 親も同じセクションにいる子タスクは、一覧には出さず親の下（o で開く）にだけ出す
+      local in_section = {}
+      for _, item in ipairs(items) do
+        in_section[item.url] = true
+      end
+      local top_items = vim.tbl_filter(function(item)
+        return not (item.parent_url and in_section[item.parent_url])
+      end, items)
+      section_rows[i] = { items = items, rows = collect(top_items, nil, {}) }
       for _, row in ipairs(section_rows[i].rows) do
         if row.item then
           badge_width = math.max(badge_width, vim.fn.strdisplaywidth((badge(row.item))))
