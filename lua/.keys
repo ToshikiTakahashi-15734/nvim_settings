@@ -195,7 +195,9 @@ alias keys='echo "
 
 ■ DB操作 (vim-dadbod)
   接続情報は ~/.config/nvim/db.setting に「接続名 = URL」で書く（Git管理外）
-  <leader>db  : サイドバーにDBのテーブル一覧を表示（開閉）
+  <leader>db  : テーブルを曖昧検索で選び、SQLと中身（1000件）を表示（最初は zinger に繋ぐ）
+  <leader>ds  : <leader>db で繋ぐDBを切り替える（= :DBSwitch）
+  <leader>dB  : サイドバーにDBのテーブル一覧を表示（開閉）
   <leader>dt  : テーブルを絞り込み検索して中身を見る
   <leader>dq  : このプロジェクト専用のSQL練習ファイルを開く（.sql/scratch.sql）
   <leader>dc  : このバッファが使う接続を選び直す（= :DBSelect）
@@ -207,12 +209,17 @@ alias keys='echo "
   :Table! 名前 : 列の定義（型・NULL可否・既定値）を見る
   :ER 名前    : ER図を描く（:ER 名前 ホップ数 で範囲指定、! で外部キーを取り直す）
   :DBSelect   : このバッファが使うDB接続を選び直す
+  :DBSwitch   : <leader>db で繋ぐDBを切り替える
   :DB クエリ  : その場でクエリを実行
 # SQLファイルの中
   <leader>S   : カーソル位置のクエリを実行（ビジュアル選択中なら選択範囲を実行）
+  Enter       : 補完の候補が出ていれば確定する（選んでいなければ先頭の候補）
+  Ctrl+Enter  : 補完の候補が出ていても閉じて改行する
   スニペット  : select / join / groupby などを打って補完から選ぶ（一覧はコマンド集のスニペットタブ）
+# カラム一覧の中（<leader>db でテーブルを開くと右側に出る）
+  q           : カラム一覧を閉じる
 # <leader>dt の検索画面の中
-  Enter       : テーブルの中身を表示
+  Enter       : テーブルの中身を表示（<leader>db から開いたときはSQLと中身を表示）
   Ctrl + d    : 列定義を見る
   Ctrl + t    : 件数を数える
   Ctrl + e    : ER図を描く

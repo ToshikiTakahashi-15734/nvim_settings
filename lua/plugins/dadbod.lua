@@ -5,7 +5,9 @@
 --   ・:Table <名前>  コマンドで中身を表示（名前は <Tab> で補完）
 --   ・<leader>dt  テーブル名を絞り込み検索して中身を表示
 --   ・<leader>dq  いまのプロジェクト専用のSQL練習ファイルを開く
---   ・<leader>db  サイドバーにDBのテーブル一覧を表示
+--   ・<leader>db  テーブルを曖昧検索で選び、SQLと中身を表示（最初は zinger に繋ぐ）
+--   ・<leader>ds  <leader>db で繋ぐDBを切り替える（= :DBSwitch）
+--   ・<leader>dB  サイドバーにDBのテーブル一覧を表示
 --   ・<leader>dc  このバッファが使う接続を選び直す（= :DBSelect）
 --   ・<leader>de  テーブルを選んでER図を描く（= :ER）
 --   ・<leader>S   カーソル位置のクエリをその場で実行
@@ -212,11 +214,10 @@ end
 -- ------------------------------------------------------------
 -- 接続を選んでもらう
 -- ------------------------------------------------------------
--- 選んだ接続はこのバッファに覚えさせる（b:db）ので、
--- 以降の :Table / <leader>dt / 補完はすべてそのDBを向く。
-local function choose_db(fn)
-    local dbs = vim.g.dbs or {}
-    local names = vim.tbl_keys(dbs)
+-- 接続名を曖昧検索で選んでもらい、選んだ接続名を on_choice に渡す。
+-- telescope.nvim が無いときは vim.ui.select（番号で選ぶ一覧）で代用する。
+local function pick_db_name(on_choice)
+    local names = vim.tbl_keys(vim.g.dbs or {})
     table.sort(names)
 
     if #names == 0 then
@@ -224,11 +225,45 @@ local function choose_db(fn)
         return
     end
 
-    vim.ui.select(names, { prompt = "どのDBに繋ぎますか？" }, function(choice)
-        if not choice then
-            return
-        end
-        local url = dbs[choice]
+    local has_telescope, pickers = pcall(require, "telescope.pickers")
+    if not has_telescope then
+        vim.ui.select(names, { prompt = "どのDBに繋ぎますか？" }, function(choice)
+            if choice then
+                on_choice(choice)
+            end
+        end)
+        return
+    end
+    local finders = require("telescope.finders")
+    local conf = require("telescope.config").values
+    local actions = require("telescope.actions")
+    local action_state = require("telescope.actions.state")
+
+    pickers.new({}, {
+        prompt_title = ("どのDBに繋ぎますか？ %d件"):format(#names),
+        finder = finders.new_table({ results = names }),
+        sorter = conf.generic_sorter({}),
+        attach_mappings = function(bufnr)
+            actions.select_default:replace(function()
+                local entry = action_state.get_selected_entry()
+                actions.close(bufnr)
+                if entry then
+                    -- ピッカーが閉じきってから次の画面を開く
+                    vim.schedule(function()
+                        on_choice(entry[1])
+                    end)
+                end
+            end)
+            return true
+        end,
+    }):find()
+end
+
+-- 選んだ接続はこのバッファに覚えさせる（b:db）ので、
+-- 以降の :Table / <leader>dt / 補完はすべてそのDBを向く。
+local function choose_db(fn)
+    pick_db_name(function(choice)
+        local url = vim.g.dbs[choice]
         vim.b.db = url
         last_picked_url = url
         vim.notify("DB: " .. choice .. " に繋ぎました", vim.log.levels.INFO)
@@ -902,12 +937,179 @@ local function cmd_er(opts)
         end
     end)
 end
+-- ------------------------------------------------------------
+-- カラムの一覧（型・NULL可否・キー・コメント）を出すクエリ
+-- ------------------------------------------------------------
+-- 「列名 / 型 / NULL可否 / キー / コメント」の5列を返す。
+local function sql_column_info(url, name)
+    local kind = db_kind(url)
+    -- スキーマ付き（public.orders）で渡されることがあるので、
+    -- 最後の . から後ろだけをテーブル名として使う
+    local bare = name:match("([^%.]+)$") or name
 
+    if kind == "postgres" then
+        return table.concat({
+            "SELECT c.column_name, c.data_type,",
+            "       CASE c.is_nullable WHEN 'YES' THEN 'NULL' ELSE 'NOT NULL' END,",
+            "       '',",
+            "       COALESCE(col_description(",
+            "           (quote_ident(c.table_schema) || '.' || quote_ident(c.table_name))::regclass,",
+            "           c.ordinal_position), '')",
+            "FROM information_schema.columns c",
+            "WHERE c.table_schema = 'public'",
+            "  AND c.table_name = '" .. bare .. "'",
+            "ORDER BY c.ordinal_position",
+        }, "\n")
+    elseif kind == "sqlite" then
+        return "SELECT name, type,"
+            .. " CASE WHEN \"notnull\" = 1 THEN 'NOT NULL' ELSE 'NULL' END,"
+            .. " CASE WHEN pk > 0 THEN 'PK' ELSE '' END, ''"
+            .. " FROM pragma_table_info('" .. bare .. "')"
+    end
+
+    return table.concat({
+        "SELECT COLUMN_NAME, COLUMN_TYPE,",
+        "       CASE IS_NULLABLE WHEN 'YES' THEN 'NULL' ELSE 'NOT NULL' END,",
+        "       CASE COLUMN_KEY WHEN 'PRI' THEN 'PK'",
+        "                       WHEN 'MUL' THEN 'FK' ELSE COLUMN_KEY END,",
+        "       COLUMN_COMMENT",
+        "FROM information_schema.COLUMNS",
+        "WHERE TABLE_SCHEMA = DATABASE()",
+        "  AND TABLE_NAME = '" .. bare .. "'",
+        "ORDER BY ORDINAL_POSITION",
+    }, "\n")
+end
+
+-- ------------------------------------------------------------
+-- カラムの一覧を右側の画面に出す
+-- ------------------------------------------------------------
+-- SQLを書きながら、どんなカラムがあるかを見られるようにする。
+-- 画面はタブごとに1つだけ使い回し、テーブルを選び直すと中身が入れ替わる。
+-- q で閉じる。
+local COLUMN_PANEL_WIDTH = 60
+
+local function show_column_panel(url, name)
+    local rows, err = query_rows(url, sql_column_info(url, name))
+    if not rows then
+        vim.notify(("[%s] カラムを取得できませんでした: %s"):format(db_label(url), err or ""), vim.log.levels.WARN)
+        return
+    end
+
+    -- 列ごとの幅をそろえて、表のように並べる
+    local headers = { "カラム", "型", "NULL", "キー", "コメント" }
+    local widths = {}
+    for i, h in ipairs(headers) do
+        widths[i] = vim.fn.strdisplaywidth(h)
+    end
+    for _, row in ipairs(rows) do
+        for i = 1, #headers do
+            widths[i] = math.max(widths[i], vim.fn.strdisplaywidth(row[i] or ""))
+        end
+    end
+    local function format_row(row)
+        local cells = {}
+        for i = 1, #headers do
+            local cell = row[i] or ""
+            -- 最後の列（コメント）は幅をそろえなくてよい
+            if i < #headers then
+                cell = cell .. string.rep(" ", widths[i] - vim.fn.strdisplaywidth(cell))
+            end
+            cells[i] = cell
+        end
+        return (table.concat(cells, "  "):gsub("%s+$", ""))
+    end
+
+    local lines = {
+        ("[%s] %s  %d列"):format(db_label(url), name, #rows),
+        format_row(headers),
+    }
+    for _, row in ipairs(rows) do
+        table.insert(lines, format_row(row))
+    end
+
+    -- 既に開いているカラム画面があれば、それを使い回す
+    local bufnr, winid
+    for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+        local b = vim.api.nvim_win_get_buf(w)
+        if vim.b[b].db_column_panel then
+            bufnr, winid = b, w
+            break
+        end
+    end
+    if not bufnr then
+        bufnr = vim.api.nvim_create_buf(false, true)
+        vim.b[bufnr].db_column_panel = true
+        vim.bo[bufnr].bufhidden = "wipe"
+        vim.keymap.set("n", "q", "<cmd>close<cr>", { buffer = bufnr, desc = "カラム一覧を閉じる" })
+
+        local cur = vim.api.nvim_get_current_win()
+        vim.cmd("botright vertical " .. COLUMN_PANEL_WIDTH .. "split")
+        winid = vim.api.nvim_get_current_win()
+        vim.api.nvim_win_set_buf(winid, bufnr)
+        vim.wo[winid].wrap = false
+        vim.wo[winid].number = false
+        vim.wo[winid].relativenumber = false
+        vim.wo[winid].signcolumn = "no"
+        vim.wo[winid].winfixwidth = true
+        vim.wo[winid].cursorline = true
+        vim.api.nvim_set_current_win(cur)
+    end
+
+    vim.bo[bufnr].modifiable = true
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
+    vim.bo[bufnr].modifiable = false
+    vim.api.nvim_win_set_cursor(winid, { 1, 0 })
+
+    -- 見出しの2行を目立たせる
+    local ns = vim.api.nvim_create_namespace("db_column_panel")
+    vim.api.nvim_buf_clear_namespace(bufnr, ns, 0, -1)
+    vim.hl.range(bufnr, ns, "Title", { 0, 0 }, { 0, -1 })
+    vim.hl.range(bufnr, ns, "Comment", { 1, 0 }, { 1, -1 })
+end
+
+-- ------------------------------------------------------------
+-- テーブルの中身を「SQLが見える画面」で表示する
+-- ------------------------------------------------------------
+-- 次のような SELECT 文を書いたSQLバッファを開き、その場で実行する。
+--   SELECT * FROM staff LIMIT 1000;
+-- 結果は下に開く画面に、列名の見出し付きで出る。
+-- 右側にはカラムの一覧を出すので、それを見ながらSQLを書ける。
+-- WHERE を足したりして <leader>S で実行し直せる。
+local function open_table_list(url, name)
+    local lines = { ("SELECT * FROM %s LIMIT %d;"):format(name, ROW_LIMIT) }
+
+    -- 接続とテーブルごとに1つのバッファを使い回す。
+    -- ファイルには保存しない（buftype=nofile）。
+    local bufname = ("db://%s/%s.sql"):format(db_label(url), name)
+    local bufnr = vim.fn.bufnr("^" .. vim.fn.escape(bufname, "\\/.*$^~[]") .. "$")
+    if bufnr == -1 then
+        bufnr = vim.api.nvim_create_buf(true, false)
+        vim.api.nvim_buf_set_name(bufnr, bufname)
+        vim.bo[bufnr].buftype = "nofile"
+        vim.bo[bufnr].swapfile = false
+    end
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
+
+    -- filetype より先に b:db を入れておく。
+    -- SQLバッファの下準備（補完・<leader>S）が自動推測で上書きしないように。
+    vim.b[bufnr].db = url
+    vim.api.nvim_set_current_buf(bufnr)
+    if vim.bo[bufnr].filetype ~= "sql" then
+        vim.bo[bufnr].filetype = "sql"
+    end
+
+    show_column_panel(url, name)
+
+    -- バッファ全体（= 上の SELECT 文）を b:db に向けて実行する
+    ensure_dadbod()
+    vim.cmd("%DB")
+end
 
 -- ------------------------------------------------------------
 -- テーブル名を絞り込み検索して、中身を表示する
 -- ------------------------------------------------------------
-local function pick_table_for(url)
+-- on_select を渡すと、<CR> で選んだときの動きをそれに差し替える。
+local function pick_table_for(url, on_select)
     local has_telescope, pickers = pcall(require, "telescope.pickers")
     if not has_telescope then
         vim.notify("telescope.nvim が必要です", vim.log.levels.ERROR)
@@ -946,7 +1148,12 @@ local function pick_table_for(url)
             actions.select_default:replace(function()
                 local name = selected()
                 actions.close(bufnr)
-                if name then
+                if name and on_select then
+                    -- ピッカーが閉じきってからバッファを開く
+                    vim.schedule(function()
+                        on_select(url, name)
+                    end)
+                elseif name then
                     run(("SELECT * FROM %s LIMIT %d"):format(name, ROW_LIMIT))
                 end
             end)
@@ -996,6 +1203,77 @@ end
 -- 接続が決まっていなければ、先にDBを選んでもらう
 local function pick_table()
     with_db(pick_table_for)
+end
+
+-- ------------------------------------------------------------
+-- テーブルを選ぶ → SQLと中身を表示する
+-- ------------------------------------------------------------
+-- 繋ぐDBは browse_db_name の接続（最初は BROWSE_DB）。
+-- バッファの接続（b:db）やプロジェクト名からは推測しない。
+-- 繋ぎ先は :DBSwitch（<leader>ds）で切り替える。
+-- ここで選んだDBは、いま開いているバッファの接続（b:db）を変えない。
+local BROWSE_DB = "zinger"
+local browse_db_name = BROWSE_DB
+
+-- <leader>db で繋ぐDBを曖昧検索で選び直し、そのままテーブル検索に進む
+local function switch_browse_db()
+    pick_db_name(function(choice)
+        browse_db_name = choice
+        vim.notify("DB: <leader>db の接続を " .. choice .. " に切り替えました", vim.log.levels.INFO)
+        pick_table_for(vim.g.dbs[choice], open_table_list)
+    end)
+end
+
+local function browse_db()
+    local url = (vim.g.dbs or {})[browse_db_name]
+    if not url then
+        -- db.setting に無い接続名なら、選んでもらう
+        vim.notify(
+            ("DB: %s が %s にありません。接続を選んでください"):format(browse_db_name, SETTING_FILE),
+            vim.log.levels.WARN
+        )
+        return switch_browse_db()
+    end
+    pick_table_for(url, open_table_list)
+end
+
+-- ------------------------------------------------------------
+-- 補完でテーブル名を書く場所かどうかを見分ける
+-- ------------------------------------------------------------
+-- カーソルの直前が「FROM / JOIN / INTO / UPDATE / TABLE + 入力中の単語」なら
+-- テーブル名を書く場所とみなす。キーワードで行が終わり、
+-- 次の行にテーブル名を書く場合（FROM ⏎ staff）も拾う。
+-- ctx は nvim-cmp の補完コンテキスト。
+local TABLE_KEYWORDS = { "FROM", "JOIN", "INTO", "UPDATE", "TABLE" }
+
+local function ends_with_table_keyword(text)
+    -- 入力中の単語（`staff` や public.staff など）を取り除いてから判定する
+    local head = (" " .. text):gsub("[%w_%.`\"]*$", ""):upper()
+    for _, kw in ipairs(TABLE_KEYWORDS) do
+        if head:match("[%s(]" .. kw .. "%s+$") then
+            return true
+        end
+    end
+    return false
+end
+
+local function wants_table_name(ctx)
+    local before = ctx.cursor_before_line or ""
+    if ends_with_table_keyword(before) then
+        return true
+    end
+    -- この行にまだ単語しか無いときは、上の行の末尾を見る
+    if not before:match("^%s*[%w_%.`\"]*$") then
+        return false
+    end
+    local row = ctx.cursor and ctx.cursor.row or vim.api.nvim_win_get_cursor(0)[1]
+    for lnum = row - 1, 1, -1 do
+        local line = vim.api.nvim_buf_get_lines(ctx.bufnr or 0, lnum - 1, lnum, false)[1] or ""
+        if line:match("%S") then
+            return ends_with_table_keyword(line .. " ")
+        end
+    end
+    return false
 end
 
 return {
@@ -1099,7 +1377,9 @@ return {
         -- 効かない（キーマップは dadbod-ui の ftplugin/sql.vim が張るため）
         ft = { "sql", "mysql", "plsql" },
         keys = {
-            { "<leader>db", "<cmd>DBUIToggle<cr>", desc = "DB: サイドバーを開閉" },
+            { "<leader>db", browse_db, desc = "DB: テーブルを検索して選び、SQLと中身を表示（最初は zinger）" },
+            { "<leader>ds", switch_browse_db, desc = "DB: <leader>db で繋ぐDBを切り替える（= :DBSwitch）" },
+            { "<leader>dB", "<cmd>DBUIToggle<cr>", desc = "DB: サイドバーを開閉" },
             { "<leader>dq", open_project_sql, desc = "DB: このプロジェクトのSQL練習ファイルを開く" },
             { "<leader>dt", pick_table, desc = "DB: テーブルを絞り込み検索して中身を見る" },
             { "<leader>de", pick_er_table, desc = "DB: テーブルを選んでER図を描く" },
@@ -1211,6 +1491,11 @@ return {
                 desc = "このバッファが使うDB接続を選び直す",
             })
 
+            -- :DBSwitch コマンドを登録する（<leader>db で繋ぐDBを切り替える）
+            vim.api.nvim_create_user_command("DBSwitch", switch_browse_db, {
+                desc = "テーブル検索（Space db）で繋ぐDBを切り替える（最初は zinger）",
+            })
+
             -- 小文字の :table でも打てるようにする。
             --
             -- Vim のユーザー定義コマンドは大文字始まりが必須なので
@@ -1257,8 +1542,45 @@ return {
                     return
                 end
                 cmp.setup.buffer({
+                    -- SQLでは Enter で補完の候補を確定し、改行は Ctrl+Enter に任せる。
+                    -- （ふだんの Enter は「候補を選んでいなければ改行」だが、
+                    --   SQLを書いている途中は候補を取り込みたい場面のほうが多い）
+                    mapping = {
+                        -- 候補が出ていれば、選んでいなくても先頭の候補で確定する
+                        ["<CR>"] = cmp.mapping(function(fallback)
+                            if cmp.visible() then
+                                cmp.confirm({ select = true })
+                            else
+                                fallback()
+                            end
+                        end, { "i", "s" }),
+                        -- 候補が出ていても閉じて、ただ改行する
+                        ["<C-CR>"] = cmp.mapping(function()
+                            if cmp.visible() then
+                                cmp.abort()
+                            end
+                            vim.api.nvim_feedkeys(
+                                vim.api.nvim_replace_termcodes("<CR>", true, false, true), "n", false
+                            )
+                        end, { "i", "s" }),
+                    },
                     sources = cmp.config.sources({
-                        { name = "vim-dadbod-completion" },
+                        {
+                            name = "vim-dadbod-completion",
+                            -- FROM / JOIN などの直後ではテーブル名だけを出す。
+                            -- dadbod-completion は文脈を見ずにテーブル名と
+                            -- 全カラム名をまとめて返すため、ここで間引く。
+                            entry_filter = function(entry, ctx)
+                                if not wants_table_name(ctx) then
+                                    return true
+                                end
+                                local kind = entry:get_kind()
+                                local kinds = cmp.lsp.CompletionItemKind
+                                -- dadbod-completion はテーブルを Class、
+                                -- スキーマを Folder として返す
+                                return kind == kinds.Class or kind == kinds.Folder
+                            end,
+                        },
                         { name = "luasnip" },
                     }, {
                         { name = "buffer" },
